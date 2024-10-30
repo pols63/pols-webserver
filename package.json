@@ -1,0 +1,32 @@
+{
+	"name": "pols-webserver",
+	"version": "1.0.0",
+	"main": "dist/index.js",
+	"module": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"scripts": {
+		"build": "npx tsc",
+		"test": "npx ts-node-dev -r tsconfig-paths/register --project tsconfig.json"
+	},
+	"author": "Jean Paul Sánchez mendoza",
+	"license": "ISC",
+	"description": "",
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@types/body-parser": "^1.19.5",
+		"@types/express": "^5.0.0",
+		"@types/express-fileupload": "^1.5.1",
+		"@types/node": "^22.7.9",
+		"eslint": "^9.13.0",
+		"globals": "^15.11.0",
+		"tsconfig-paths": "^4.2.0",
+		"typescript": "^5.6.3",
+		"typescript-eslint": "^8.11.0"
+	},
+	"dependencies": {
+		"express": "^4.21.1",
+		"express-fileupload": "^1.5.1",
+		"pols-utils": "^1.1.4",
+		"socket.io": "^4.8.1"
+	}
+}
