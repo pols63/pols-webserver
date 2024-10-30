@@ -1,7 +1,7 @@
 import fs from 'fs'
 import mimeTypes from 'mime-types'
+import { PUtils } from 'pols-utils'
 import stream from 'stream'
-import { Utilities } from './utilities'
 
 export const Status = {
 	Ok: 200,
@@ -13,7 +13,7 @@ export const Status = {
 	InternalServerError: 500,
 }
 
-export class FileInfo {
+export class PFileInfo {
 	fileName: string
 	filePath?: string
 	content?: string
@@ -34,7 +34,7 @@ export class FileInfo {
 	}
 }
 
-export class FileStream {
+export class PFileStream {
 	stream: stream.Readable
 	fileName: string
 	contentType?: string
@@ -50,9 +50,9 @@ export class FileStream {
 	}
 }
 
-export type ResponseBody = string | number | boolean | object | FileInfo | FileStream | stream.Readable
+export type ResponseBody = string | number | boolean | object | PFileInfo | PFileStream | stream.Readable
 
-export type Params = {
+export type PResponseParams = {
 	body?: ResponseBody
 	status?: number
 	statusText?: string
@@ -68,7 +68,7 @@ export type Cookie = {
 	sameSite?: 'strict' | 'lax' | 'none'
 }
 
-export class WebServerResponse {
+export class PResponse {
 	originalBody?: unknown
 	body?: string | Buffer | stream.Readable
 	status?: number
@@ -76,9 +76,8 @@ export class WebServerResponse {
 	headers: { [key: string]: string } = {}
 	cookies: Cookie[] = []
 	cacheControl = false
-	text?: string | string[]
 
-	constructor(params: Params) {
+	constructor(params: PResponseParams) {
 		if ('redirect' in params) {
 			this.status = 302
 			this.headers = {
@@ -86,7 +85,7 @@ export class WebServerResponse {
 			}
 		} else {
 			this.originalBody = params.body
-			if (params.body instanceof FileInfo) {
+			if (params.body instanceof PFileInfo) {
 				if (params.body.filePath) {
 					if (!fs.existsSync(params.body.filePath)) {
 						this.status = 404
@@ -104,7 +103,7 @@ export class WebServerResponse {
 				/* Asigna las cabeceras */
 				this.headers['Content-disposition'] = `inline; ${fileName ? `filename="${fileName}"` : ''}`
 				if (fileName) this.headers['file-name'] = fileName
-			} else if (params.body instanceof FileStream) {
+			} else if (params.body instanceof PFileStream) {
 				this.headers['Content-Type'] = params.body.contentType ?? (mimeTypes.lookup(params.body.fileName) || 'application/octet-stream')
 				const contentDisposition: string[] = [params.body.forceDownload ? 'attachment' : 'inline']
 				if (params.body?.fileName) contentDisposition.push(`filename="${encodeURIComponent(params.body.fileName)}"`)
@@ -116,14 +115,12 @@ export class WebServerResponse {
 			} else if (typeof params.body == 'number') {
 				this.headers['Content-Type'] = 'text/plain'
 				this.body = params.body.toString()
-				this.text = this.body
 			} else if ((params.body !== undefined && typeof params.body != 'string') || (typeof params.body == 'boolean') || (typeof params.body == 'object')) {
 				this.headers['Content-Type'] = 'application/json'
-				this.body = Utilities.JSON.stringify(params.body)
+				this.body = PUtils.JSON.stringify(params.body)
 			} else {
 				this.headers['Content-Type'] = 'text/plain'
 				this.body = params.body ?? ''
-				this.text = this.body
 			}
 
 			if (params.headers) {

@@ -16,6 +16,7 @@
 		"@types/body-parser": "^1.19.5",
 		"@types/express": "^5.0.0",
 		"@types/express-fileupload": "^1.5.1",
+		"@types/mime-types": "^2.1.4",
 		"@types/node": "^22.7.9",
 		"eslint": "^9.13.0",
 		"globals": "^15.11.0",

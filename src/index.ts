@@ -1,6 +1,6 @@
 import { Session, SessionCollection, SessionBody, StoreMethod } from './session'
 import { PUtils, PLogger } from 'pols-utils'
-import { WebServerResponse, FileInfo, ResponseBody } from './response'
+import { PResponse, PFileInfo, ResponseBody } from './response'
 import { PRequest } from './request'
 import express from 'express'
 import bodyParser from 'body-parser'
@@ -13,9 +13,9 @@ import socketIo from 'socket.io'
 import { PLoggerParams } from 'pols-utils/dist/plogger'
 
 export type PWebServerEvents = {
-	requestReceived?(request: PRequest, session: Session): Promise<WebServerResponse | void>
-	notFound?(type: 'script' | 'function', request: PRequest, session: Session): Promise<WebServerResponse | void>
-	beforeExecute?(route: PRoute, request: PRequest, session: Session): Promise<WebServerResponse | void>
+	requestReceived?(request: PRequest, session: Session): Promise<PResponse | void>
+	notFound?(type: 'script' | 'function', request: PRequest, session: Session): Promise<PResponse | void>
+	beforeExecute?(route: PRoute, request: PRequest, session: Session): Promise<PResponse | void>
 }
 
 export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: Session, data: unknown[] }) => void>
@@ -110,7 +110,7 @@ export class PRoute {
 }
 
 /* Send body */
-const responseToClient = (response: WebServerResponse, res: express.Response) => {
+const responseToClient = (response: PResponse, res: express.Response) => {
 	if (response.status) res.status(response.status)
 	if (!response.cacheControl) {
 		res.set('Cache-Control', 'no-cache')
@@ -258,7 +258,7 @@ export class PWebServer {
 			if (req.path.match(new RegExp('^\\/' + this.config.baseUrl + '(\\/|$)'))) {
 				next()
 			} else {
-				responseToClient(new WebServerResponse({
+				responseToClient(new PResponse({
 					status: 404,
 					body: 'No se encontró la ruta'
 				}), res)
@@ -269,7 +269,7 @@ export class PWebServer {
 		app.use((req, res, next) => {
 			bodyParser.json({ limit: config.sizeRequest + 'mb' })(req, res, error => {
 				if (error instanceof SyntaxError) {
-					responseToClient(new WebServerResponse({
+					responseToClient(new PResponse({
 						status: 400,
 						body: 'Formato JSON incorrecto'
 					}), res)
@@ -288,7 +288,7 @@ export class PWebServer {
 				next()
 			} catch (err) {
 				this.logger.error({ label: 'WEB SERVER', description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
-				responseToClient(new WebServerResponse({
+				responseToClient(new PResponse({
 					body: 'Ocurrió un error al intentar crear la carpeta de recepción de archivos',
 					status: 500
 				}), res)
@@ -309,7 +309,7 @@ export class PWebServer {
 			const contentLength = parseInt(req.headers['content-length'], 10)
 
 			if (contentLength > config.sizeRequest * 1024 * 1024) {
-				responseToClient(new WebServerResponse({
+				responseToClient(new PResponse({
 					body: 'La petición supera el límite establecido',
 					status: 500
 				}), res)
@@ -443,13 +443,13 @@ export class PWebServer {
 
 	private async notFound(type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: Session) {
 		const config = this.config
-		const response = new WebServerResponse({
+		const response = new PResponse({
 			body: `No se encontró la ruta`,
 			status: 404
 		})
-		let notFoundEventResponse: WebServerResponse
+		let notFoundEventResponse: PResponse
 		try {
-			notFoundEventResponse = await config.events?.notFound?.('script', request, session) as WebServerResponse
+			notFoundEventResponse = await config.events?.notFound?.('script', request, session) as PResponse
 			if (!notFoundEventResponse) {
 				if (type == 'script') {
 					this.logger.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'`, request })
@@ -460,7 +460,7 @@ export class PWebServer {
 		} catch (err) {
 			const subtitle = `Error al ejecutar el evento 'notFound'`
 			this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-			notFoundEventResponse = new WebServerResponse({
+			notFoundEventResponse = new PResponse({
 				body: subtitle,
 				status: 500
 			})
@@ -468,7 +468,7 @@ export class PWebServer {
 		return notFoundEventResponse ?? response
 	}
 
-	private async detectRoute(req): Promise<WebServerResponse> {
+	private async detectRoute(req): Promise<PResponse> {
 		const config = this.config
 		const request = new PRequest(req)
 		const session = new Session({
@@ -486,20 +486,20 @@ export class PWebServer {
 		/* Detiene la llamada en caso el protocolo sea diferente */
 		const httpsWebServerPort = config.instances.https?.port
 		if (request.protocol == 'http' && httpsWebServerPort) {
-			return new WebServerResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
+			return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
 		}
 
 		this.logger.system({ label: '>>> REQUEST', request })
 
 		/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
 		if (config.events?.requestReceived) {
-			let response: WebServerResponse | void
+			let response: PResponse | void
 			try {
 				response = await config.events.requestReceived(request, session)
 			} catch (err) {
 				const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
 				this.logger.error({ label: 'EVENTS', description: message, body: err, request })
-				return new WebServerResponse({
+				return new PResponse({
 					body: message,
 					status: 503
 				})
@@ -507,7 +507,7 @@ export class PWebServer {
 			if (response) return response
 		}
 
-		const response: WebServerResponse = await (async (): Promise<WebServerResponse> => {
+		const response: PResponse = await (async (): Promise<PResponse> => {
 			const parameters = []
 
 			/* Se extrae el path, en caso no lo tenga, se utiliza el path por defecto establecido en la configuración */
@@ -532,8 +532,8 @@ export class PWebServer {
 				}
 				const publicFilePath = path.join(config.public.path, pathUrlCopy)
 				if (PUtils.Files.existsFile(publicFilePath)) {
-					return new WebServerResponse({
-						body: new FileInfo({ filePath: publicFilePath }),
+					return new PResponse({
+						body: new PFileInfo({ filePath: publicFilePath }),
 						status: 200
 					})
 				}
@@ -601,7 +601,7 @@ export class PWebServer {
 				} catch (err) {
 					const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
 					this.logger.error({ label: 'ERROR', description, body: err, request })
-					return new WebServerResponse({
+					return new PResponse({
 						body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 						status: 500
 					})
@@ -635,24 +635,24 @@ export class PWebServer {
 
 			const toExecute = routeObject[functionName]
 
-			if (toExecute == null) return new WebServerResponse({
+			if (toExecute == null) return new PResponse({
 				body: `'${functionName}' no existe como método de ruta`,
 				status: 404
 			})
 
-			if (typeof toExecute != 'function' || toExecute.constructor.name != 'AsyncFunction') return new WebServerResponse({
+			if (typeof toExecute != 'function' || toExecute.constructor.name != 'AsyncFunction') return new PResponse({
 				body: `'${functionName}' no es una función válida de ruta`,
 				status: 500
 			})
 
 			/* Verifica si la librería tiene definida una lista blanca de IPs */
-			if (routeObject.whiteList.length && !routeObject.whiteList.includes(request.ip)) return new WebServerResponse({
+			if (routeObject.whiteList.length && !routeObject.whiteList.includes(request.ip)) return new PResponse({
 				body: `Acceso prohibido al IP '${request.ip}'`,
 				status: 401
 			})
 
 			/* Verifica si la librería tiene definida una lista blanca de IPs */
-			if (routeObject.blackList.length && routeObject.blackList.includes(request.ip)) return new WebServerResponse({
+			if (routeObject.blackList.length && routeObject.blackList.includes(request.ip)) return new PResponse({
 				body: `Acceso prohibido al IP '${request.ip}'`,
 				status: 401
 			})
@@ -664,7 +664,7 @@ export class PWebServer {
 			} catch (err) {
 				const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
 				this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-				return new WebServerResponse({
+				return new PResponse({
 					body: subtitle,
 					status: 500
 				})
@@ -676,7 +676,7 @@ export class PWebServer {
 			} catch (err) {
 				const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
 				await this.logger.error({ label: 'ERROR', description, body: err, request })
-				result = new WebServerResponse({
+				result = new PResponse({
 					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 					status: 500
 				})
@@ -687,7 +687,7 @@ export class PWebServer {
 				} catch (err) {
 					const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
 					this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-					result = new WebServerResponse({
+					result = new PResponse({
 						body: subtitle,
 						status: 500
 					})
@@ -695,10 +695,10 @@ export class PWebServer {
 			}
 
 			/* Devuelve la respuesta de la función */
-			if (result instanceof WebServerResponse) {
+			if (result instanceof PResponse) {
 				return result
 			} else {
-				return new WebServerResponse({
+				return new PResponse({
 					body: result as ResponseBody,
 					status: 200
 				})
