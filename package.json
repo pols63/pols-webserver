@@ -28,6 +28,7 @@
 		"express": "^4.21.1",
 		"express-fileupload": "^1.5.1",
 		"pols-utils": "^1.1.4",
+		"pols-validator": "^1.0.1",
 		"socket.io": "^4.8.1"
 	}
 }

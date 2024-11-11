@@ -1,5 +1,6 @@
-import { Session, SessionCollection, SessionBody, StoreMethod } from './session'
+import { Session, SessionCollection, SessionBody, StoreMethod, StoreMethodFunction } from './session'
 import { PUtils, PLogger } from 'pols-utils'
+import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, ResponseBody } from './response'
 import { PRequest } from './request'
 import express from 'express'
@@ -48,10 +49,10 @@ export type PWebServerParams = {
 	oldFilesInUploadsFolder?: {
 		minutesExpiration: number
 	}
-	sizeRequest: number
+	sizeRequest?: number
 	paths: {
 		routes: string
-		logs: string
+		logs?: string
 		uploads: string
 	}
 	baseUrl?: string
@@ -72,6 +73,8 @@ export type PWebServerParams = {
 		pretty?: boolean
 	} | {
 		storeMethod: StoreMethod.memory
+	} | {
+		storeMethod: StoreMethodFunction
 	})
 	logs?: {
 		console?: {
@@ -192,7 +195,7 @@ const logger = (method: LoggerType, config: PWebServerParams, { label, descripti
 	if (request?.ip) descriptions.push(request.ip)
 	if (request?.pathUrl) descriptions.push(request.pathUrl)
 
-	PLogger[method]({ label, description: descriptions.join(' :: '), body, exit, showInConsole, logPath: showInLogFile ? config.paths.logs : undefined })
+	PLogger[method]({ label, description: descriptions.join(' :: '), body, exit, showInConsole, logPath: showInLogFile ? (config.paths.logs ?? './') : undefined })
 }
 
 export class PWebServer {
@@ -213,6 +216,18 @@ export class PWebServer {
 	// public socketServerTls?: socketIo.Server
 
 	constructor(config: PWebServerParams) {
+		/* Valida los parámetros de la configuración */
+		const v = validate<PWebServerParams>(config, rules({ required: true }).isObject({
+			paths: rules({ required: true }).isObject({
+				logs: rules({ default: './' }).isAlphanumeric(),
+				route: rules({ required: true }).isAlphanumeric(),
+				uploads: rules({ default: './' }).isAlphanumeric()
+			}),
+			sizeRequest: rules({ default: 50 }).isNumber().gt(0)
+		}))
+		if (v.error == true) throw new Error(v.messages[0])
+		config.paths = v.result.paths
+
 		/* Valida la existencia de definición de una instancia */
 		if (!config.instances.http && !config.instances.https) {
 			throw new Error(`Es requerido especificar la configuración de las instancias de servicio web en 'instances.http' o 'instances.https'`)
@@ -220,11 +235,6 @@ export class PWebServer {
 
 		/* Valida el contenido de la ruta por defecto */
 		if (config.defaultRoute && config.defaultRoute.match(/^(\/|\\)/)) throw new Error(`La propiedad de configuración 'defaultRoute' no debe iniciar con '\\' o '/'`)
-
-		/* Valida que los paths no se estén enviando vacíos */
-		if (!config.paths.logs.trim()) throw new Error(`Es requerido especificar la ruta para los archivos de log en 'paths.logs'`)
-		if (!config.paths.routes.trim()) throw new Error(`Es requerido especificar la ruta para los archivos de rutas en 'paths.routes'`)
-		if (!config.paths.uploads.trim()) throw new Error(`La ruta especificada en 'paths.uploads' no tiene un valor válido`)
 
 		/* Valida la configuración de las sesiones */
 		if (config.sessions.storeMethod == StoreMethod.files) {

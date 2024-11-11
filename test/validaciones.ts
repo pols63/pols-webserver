@@ -1,22 +1,21 @@
-import { rules, validate } from '../src/index'
+import { PWebServer } from '../src/index'
+import { StoreMethod } from '../src/session'
 
-const original = {
-	uno: 'hola',
-	dos: 1,
-	tres: '67',
-	cuatro: {
-		aaa: '2024-10-28 23:56:00',
-		bbb: 'fgh'
+const server = new PWebServer({
+	instances: {
+		http: {
+			port: 6001
+		}
+	},
+	paths: {
+		routes: './routes',
+		uploads: './'
+	},
+	sessions: {
+		minutesExpiration: 15,
+		storeMethod: StoreMethod.files,
+		path: './',
+		pretty: true,
 	}
-}
-
-const resultados = validate(original, rules({ label: 'Mi número' }).isObject({
-	uno: rules({ label: 'Uno', required: true }),
-	dos: rules().isBoolean(),
-	tres: rules({ required: true }).isNaturalNoZero(),
-	cuatro: rules({ label: 'Cuatro', default: {} }).isObject({
-		aaa: rules().isDateTime()
-	})
-}, `Mi número >`))
-
-console.log(original, resultados)
+})
+server.start()
