@@ -116,8 +116,8 @@ export class PRoute {
 const responseToClient = (response: PResponse, res: express.Response) => {
 	if (response.status) res.status(response.status)
 	if (!response.cacheControl) {
-		res.set('Cache-Control', 'no-cache')
-		res.set('ETag', Math.random().toString())
+		res.set('Cache-Control', 'no-store')
+		// res.set('ETag', Math.random().toString())
 	}
 	if (response.headers) {
 		for (const headerName in response.headers) {
@@ -222,7 +222,7 @@ export class PWebServer {
 				logs: rules({ default: './' }).isAlphanumeric(),
 				route: rules({ required: true }).isAlphanumeric(),
 				uploads: rules({ default: './' }).isAlphanumeric()
-			}),
+			}, 'paths.'),
 			sizeRequest: rules({ default: 50 }).isNumber().gt(0)
 		}))
 		if (v.error == true) throw new Error(v.messages[0])
