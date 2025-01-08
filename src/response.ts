@@ -3,7 +3,7 @@ import mimeTypes from 'mime-types'
 import { PUtils } from 'pols-utils'
 import stream from 'stream'
 
-export const Status = {
+export const PStatusCollection = {
 	Ok: 200,
 	Found: 302,
 	Forbidden: 403,
