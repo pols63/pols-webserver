@@ -77,7 +77,7 @@ export type PWebServerParams = {
 		storeMethod: StoreMethodFunction
 	})
 	logs?: {
-		console?: {
+		console?: boolean | {
 			info?: boolean
 			error?: boolean
 			warning?: boolean
@@ -85,7 +85,7 @@ export type PWebServerParams = {
 			debug?: boolean
 			system?: boolean
 		}
-		file?: {
+		file?: boolean | {
 			info?: boolean
 			error?: boolean
 			warning?: boolean
@@ -145,6 +145,46 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 	}
 }
 
+const logger = (method: LoggerType, config: PWebServerParams, { label, description, body, request, exit = false }: PWebServerLoggerParams) => {
+	/* Determina si el mensaje se mostrará en consola */
+	let showInConsole: boolean
+	if (config?.logs?.console == null) {
+		showInConsole = true
+	} else if (typeof config?.logs?.console == 'boolean') {
+		showInConsole = config?.logs?.console
+	} else {
+		showInConsole = (config?.logs?.console?.success && method == 'success')
+			|| (config?.logs?.console?.info && method == 'info')
+			|| (config?.logs?.console?.system && method == 'system')
+			|| (config?.logs?.console?.warning && method == 'warning')
+			|| (config?.logs?.console?.error && method == 'error')
+			|| (config?.logs?.console?.debug && method == 'debug')
+	}
+
+	/* Determina si el mensaje se mostrará en archivo */
+	let showInLogFile: boolean
+	if (config?.logs?.file == null) {
+		showInLogFile = false
+	} else if (typeof config?.logs?.file == 'boolean') {
+		showInLogFile = config?.logs?.file
+	} else {
+		showInLogFile = (config?.logs?.file?.success && method == 'success')
+			|| (config?.logs?.file?.info && method == 'info')
+			|| (config?.logs?.file?.system && method == 'system')
+			|| (config?.logs?.file?.warning && method == 'warning')
+			|| (config?.logs?.file?.error && method == 'error')
+			|| (config?.logs?.file?.debug && method == 'debug')
+	}
+
+	/* Esta variable pintará etiquestas antes de las declaradas en 'tags' */
+	const descriptions = []
+	if (description) descriptions.push(description)
+	if (request?.ip) descriptions.push(request.ip)
+	if (request?.pathUrl) descriptions.push(request.pathUrl)
+
+	PLogger[method]({ label, description: descriptions.join(' :: '), body, exit, showInConsole, logPath: showInLogFile ? (config.paths.logs ?? './') : undefined })
+}
+
 const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
 	webServer.logger.system({ label: 'WEB SOCKET', description: `Cliente conectado` })
 	const config = webServer.config
@@ -170,32 +210,48 @@ const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Soc
 	}
 }
 
-const logger = (method: LoggerType, config: PWebServerParams, { label, description, body, request, exit = false }: PWebServerLoggerParams) => {
-	/* Determina si el mensaje se mostrará en consola */
-	const showInConsole =
-		(config?.logs?.console?.success && method == 'success')
-		|| (config?.logs?.console?.info && method == 'info')
-		|| (config?.logs?.console?.system && method == 'system')
-		|| (config?.logs?.console?.warning && method == 'warning')
-		|| (config?.logs?.console?.error && method == 'error')
-		|| (config?.logs?.console?.debug && method == 'debug')
+const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Promise<typeof PRoute> => {
+	const config = webServer.config
+	const codePath = require.resolve(path.resolve(config.paths.routes, ...filePath))
 
-	/* Determina si el mensaje se mostrará en archivo */
-	const showInLogFile =
-		(config?.logs?.file?.success && method == 'success')
-		|| (config?.logs?.file?.info && method == 'info')
-		|| (config?.logs?.file?.system && method == 'system')
-		|| (config?.logs?.file?.warning && method == 'warning')
-		|| (config?.logs?.file?.error && method == 'error')
-		|| (config?.logs?.file?.debug && method == 'debug')
+	if (!fs.existsSync(codePath)) throw new Error(`No existe el archivo de ruta '${codePath}'`)
 
-	/* Esta variable pintará etiquestas antes de las declaradas en 'tags' */
-	const descriptions = []
-	if (description) descriptions.push(description)
-	if (request?.ip) descriptions.push(request.ip)
-	if (request?.pathUrl) descriptions.push(request.pathUrl)
+	let RouteClass: any
+	try {
+		RouteClass = require(codePath)
+	} catch (err) {
+		throw new Error(`Error al intentar importar la ruta '${codePath}'.\n${err.stack}`)
+	}
+	if (!(RouteClass?.default?.prototype instanceof PRoute)) throw new Error(`La ruta '${codePath}' debe entregar una clase heredada de 'Route'`)
 
-	PLogger[method]({ label, description: descriptions.join(' :: '), body, exit, showInConsole, logPath: showInLogFile ? (config.paths.logs ?? './') : undefined })
+	return RouteClass.default
+}
+
+const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: Session) => {
+	const config = webServer.config
+	const response = new PResponse({
+		body: `No se encontró la ruta`,
+		status: 404
+	})
+	let notFoundEventResponse: PResponse
+	try {
+		notFoundEventResponse = await config.events?.notFound?.('script', request, session) as PResponse
+		if (!notFoundEventResponse) {
+			if (type == 'script') {
+				webServer.logger.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'`, request })
+			} else {
+				webServer.logger.error({ label: 'ERROR', description: `No se encontró la función '${functionName}' en '${pathToRoute}'`, request })
+			}
+		}
+	} catch (err) {
+		const subtitle = `Error al ejecutar el evento 'notFound'`
+		webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+		notFoundEventResponse = new PResponse({
+			body: subtitle,
+			status: 500
+		})
+	}
+	return notFoundEventResponse ?? response
 }
 
 export class PWebServer {
@@ -213,7 +269,6 @@ export class PWebServer {
 	private server?: http.Server
 	public webSocket?: socketIo.Server
 	private serverTls?: https.Server
-	// public socketServerTls?: socketIo.Server
 
 	constructor(config: PWebServerParams) {
 		/* Valida los parámetros de la configuración */
@@ -451,33 +506,6 @@ export class PWebServer {
 		warning: (params: PWebServerLoggerParams) => logger('warning', this.config, params),
 	}
 
-	private async notFound(type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: Session) {
-		const config = this.config
-		const response = new PResponse({
-			body: `No se encontró la ruta`,
-			status: 404
-		})
-		let notFoundEventResponse: PResponse
-		try {
-			notFoundEventResponse = await config.events?.notFound?.('script', request, session) as PResponse
-			if (!notFoundEventResponse) {
-				if (type == 'script') {
-					this.logger.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'`, request })
-				} else {
-					this.logger.error({ label: 'ERROR', description: `No se encontró la función '${functionName}' en '${pathToRoute}'`, request })
-				}
-			}
-		} catch (err) {
-			const subtitle = `Error al ejecutar el evento 'notFound'`
-			this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-			notFoundEventResponse = new PResponse({
-				body: subtitle,
-				status: 500
-			})
-		}
-		return notFoundEventResponse ?? response
-	}
-
 	private async detectRoute(req): Promise<PResponse> {
 		const config = this.config
 		const request = new PRequest(req)
@@ -576,7 +604,7 @@ export class PWebServer {
 						if (part == null) part = 'index'
 						continue
 					} else {
-						return await this.notFound('script', pathToRoute, '', request, session)
+						return await notFound(this, 'script', pathToRoute, '', request, session)
 					}
 				} else {
 					/* Si el elemento no existe, se evalúa si existe como archivo aagregándole las extensiones correspondientes */
@@ -600,13 +628,13 @@ export class PWebServer {
 							part = 'index'
 							continue
 						} else {
-							return await this.notFound('script', pathToRoute, '', request, session)
+							return await notFound(this, 'script', pathToRoute, '', request, session)
 						}
 					}
 				}
 
 				try {
-					const routeClass = await this.loadRouteClass(pathToRoute)
+					const routeClass = await loadRouteClass(this, pathToRoute)
 					routeObject = new routeClass(this, request, session)
 				} catch (err) {
 					const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
@@ -632,7 +660,7 @@ export class PWebServer {
 					/* Si no se ha encontrado la función indicada en la URL, se buscará la función $index, de existir, se invocará automáticamente a ésta, dejando a 'part' con el rol de parámetro */
 					functionName = '$index'
 				} else {
-					return await this.notFound('function', pathToRoute, functionName, request, session)
+					return await notFound(this, 'function', pathToRoute, functionName, request, session)
 				}
 			}
 
@@ -723,22 +751,5 @@ export class PWebServer {
 			sameSite: config.sessions?.sameSiteCookie
 		})
 		return response
-	}
-
-	async loadRouteClass(...filePath: string[]): Promise<typeof PRoute> {
-		const config = this.config
-		const codePath = require.resolve(path.resolve(config.paths.routes, ...filePath))
-
-		if (!fs.existsSync(codePath)) throw new Error(`No existe el archivo de ruta '${codePath}'`)
-
-		let RouteClass: any
-		try {
-			RouteClass = require(codePath)
-		} catch (err) {
-			throw new Error(`Error al intentar importar la ruta '${codePath}'.\n${err.stack}`)
-		}
-		if (!(RouteClass?.default?.prototype instanceof PRoute)) throw new Error(`La ruta '${codePath}' debe entregar una clase heredada de 'Route'`)
-
-		return RouteClass.default
 	}
 }

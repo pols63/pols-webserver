@@ -1,5 +1,6 @@
 import { PWebServer } from '../src/index'
 import { StoreMethod } from '../src/session'
+import path from 'path'
 
 const server = new PWebServer({
 	instances: {
@@ -8,13 +9,13 @@ const server = new PWebServer({
 		}
 	},
 	paths: {
-		routes: './routes',
-		uploads: './'
+		routes: path.join(__dirname, './routes'),
+		uploads: path.join(__dirname, './uploads')
 	},
 	sessions: {
 		minutesExpiration: 15,
 		storeMethod: StoreMethod.files,
-		path: './',
+		path: path.join(__dirname, './sessions'),
 		pretty: true,
 	}
 })
