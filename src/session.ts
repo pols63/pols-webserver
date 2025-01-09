@@ -45,7 +45,7 @@ export type Params = {
 	storeMethod: StoreMethodFunction
 })
 
-export class Session {
+export class PSession {
 	private _id: string
 	private hostname: string
 	private ip: string

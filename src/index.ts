@@ -1,4 +1,4 @@
-import { Session, SessionCollection, SessionBody, StoreMethod, StoreMethodFunction } from './session'
+import { PSession, SessionCollection, SessionBody, StoreMethod, StoreMethodFunction } from './session'
 import { PUtils, PLogger } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, ResponseBody } from './response'
@@ -14,12 +14,12 @@ import socketIo from 'socket.io'
 import { PLoggerParams } from 'pols-utils/dist/plogger'
 
 export type PWebServerEvents = {
-	requestReceived?(request: PRequest, session: Session): Promise<PResponse | void>
-	notFound?(type: 'script' | 'function', request: PRequest, session: Session): Promise<PResponse | void>
-	beforeExecute?(route: PRoute, request: PRequest, session: Session): Promise<PResponse | void>
+	requestReceived?(request: PRequest, session: PSession): Promise<PResponse | void>
+	notFound?(type: 'script' | 'function', request: PRequest, session: PSession): Promise<PResponse | void>
+	beforeExecute?(route: PRoute, request: PRequest, session: PSession): Promise<PResponse | void>
 }
 
-export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: Session, data: unknown[] }) => void>
+export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: PSession, data: unknown[] }) => void>
 
 type LoggerType = 'info' | 'success' | 'warning' | 'error' | 'debug' | 'system'
 
@@ -39,7 +39,7 @@ export type PWebServerParams = {
 		}
 		webSocket?: {
 			urlPath?: string
-			connectionEvent?: (clientSocket: socketIo.Socket, session: Session) => void
+			connectionEvent?: (clientSocket: socketIo.Socket, session: PSession) => void
 			events?: PWebSocketClientEvents
 		}
 	}
@@ -99,11 +99,11 @@ export type PWebServerParams = {
 export class PRoute {
 	readonly server: PWebServer
 	readonly request: PRequest
-	readonly session: Session
+	readonly session: PSession
 	whiteList: string[] = []
 	blackList: string[] = []
 
-	constructor(server: PWebServer, request: PRequest, session: Session) {
+	constructor(server: PWebServer, request: PRequest, session: PSession) {
 		this.server = server
 		this.request = request
 		this.session = session
@@ -189,7 +189,7 @@ const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Soc
 	webServer.logger.system({ label: 'WEB SOCKET', description: `Cliente conectado` })
 	const config = webServer.config
 	const request = new PRequest(clientSocket.request as any)
-	const session = new Session({
+	const session = new PSession({
 		ip: clientSocket.handshake.address,
 		hs: request.cookies?.hs,
 		hostname: request.headers.host,
@@ -227,7 +227,7 @@ const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Pro
 	return RouteClass.default
 }
 
-const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: Session) => {
+const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: PSession) => {
 	const config = webServer.config
 	const response = new PResponse({
 		body: `No se encontró la ruta`,
@@ -252,6 +252,254 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 		})
 	}
 	return notFoundEventResponse ?? response
+}
+
+const detectRoute = async (webServer: PWebServer, req: express.Request): Promise<PResponse> => {
+	const config = webServer.config
+	const request = new PRequest(req)
+	const session = new PSession({
+		ip: request.ip,
+		hs: request.cookies?.hs,
+		hostname: request.hostname,
+		userAgent: request.headers['user-agent'] ?? '',
+		minutesExpiration: config.sessions.minutesExpiration,
+		sessions: webServer.sessions,
+		storeMethod: config.sessions.storeMethod,
+		pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
+		storePath: config.sessions.storeMethod == StoreMethod.files ? config.sessions.path : undefined
+	})
+	await session.start()
+
+	/* Detiene la llamada en caso el protocolo sea diferente */
+	const httpsWebServerPort = config.instances.https?.port
+	if (request.protocol == 'http' && httpsWebServerPort) {
+		return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
+	}
+
+	webServer.logger.system({ label: '>>> REQUEST', request })
+
+	/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
+	if (config.events?.requestReceived) {
+		let response: PResponse | void
+		try {
+			response = await config.events.requestReceived(request, session)
+		} catch (err) {
+			const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
+			webServer.logger.error({ label: 'EVENTS', description: message, body: err, request })
+			return new PResponse({
+				body: message,
+				status: 503
+			})
+		}
+		if (response) return response
+	}
+
+	const response: PResponse = await (async (): Promise<PResponse> => {
+		const parameters = []
+
+		/* Se extrae el path, en caso no lo tenga, se utiliza el path por defecto establecido en la configuración */
+		let requestPathUrl = webServer.config.baseUrl ? request.pathUrl.replace(new RegExp('^' + webServer.config.baseUrl + '(\\/|$)'), '') : request.pathUrl
+		if (config.remap && requestPathUrl) {
+			for (const r of config.remap) {
+				const requestPathUrlResult = requestPathUrl.replace(r.from, r.to)
+				if (requestPathUrl != requestPathUrlResult) {
+					requestPathUrl = requestPathUrlResult
+					request.remap = requestPathUrlResult
+					break
+				}
+			}
+		}
+		const pathUrl = requestPathUrl || (config.defaultRoute ?? '')
+
+		/* Se valida si el pathUrl apunta a un archivo en public */
+		if (config.public) {
+			let pathUrlCopy = pathUrl
+			if (config.public.urlPath && request.pathUrl.match(new RegExp('^' + config.public.urlPath))) {
+				pathUrlCopy = request.pathUrl.replace(new RegExp('^' + config.public.urlPath), '')
+			}
+			const publicFilePath = path.join(config.public.path, pathUrlCopy)
+			if (PUtils.Files.existsFile(publicFilePath)) {
+				return new PResponse({
+					body: new PFileInfo({ filePath: publicFilePath }),
+					status: 200
+				})
+			}
+		}
+
+		/* Se descompone el path */
+		const pathParts = pathUrl.split('/').filter(part => !['.', '..'].includes(part))
+
+		/* Se obtiene la ruta solicitada por el usuario y se descompone para ubicar la función a ejecutar. */
+		const pathToRouteArray = [config.paths.routes]
+		const relativePathToRouteArray: string[] = []
+
+		/* Recorre en cada parte de la ruta y busca el objeto de la ruta. De no encontrarlo, responderá con un 404 */
+		let i = 0
+		let routeObject: PRoute
+		let part = pathParts[i]
+		let pathToRoute = ''
+		while (!routeObject) {
+			pathToRoute = path.join(...pathToRouteArray, part)
+
+			const elementExists = fs.existsSync(pathToRoute)
+			if (elementExists) {
+				/* Si el elemento existe, se evalúa si se trata de un directorio, si no lo es, se responde con error 404 */
+				const statsInfo = fs.statSync(pathToRoute)
+				if (statsInfo.isDirectory) {
+					pathToRouteArray.push(part)
+					relativePathToRouteArray.push(part)
+					i++
+					part = pathParts[i]
+					if (part == null) part = 'index'
+					continue
+				} else {
+					return await notFound(this, 'script', pathToRoute, '', request, session)
+				}
+			} else {
+				/* Si el elemento no existe, se evalúa si existe como archivo aagregándole las extensiones correspondientes */
+				const javascriptFileExists = fs.existsSync(`${pathToRoute}.js`)
+				const typescriptFileExists = fs.existsSync(`${pathToRoute}.ts`)
+				let ext = ''
+				if (javascriptFileExists) {
+					ext = '.js'
+				} else if (typescriptFileExists) {
+					ext = '.ts'
+				}
+
+				if (ext) {
+					pathToRoute += ext
+					pathToRouteArray.push(part + ext)
+					relativePathToRouteArray.push(part + ext)
+					i++
+				} else {
+					if (part != 'index') {
+						i--
+						part = 'index'
+						continue
+					} else {
+						return await notFound(this, 'script', pathToRoute, '', request, session)
+					}
+				}
+			}
+
+			try {
+				const routeClass = await loadRouteClass(this, pathToRoute)
+				routeObject = new routeClass(this, request, session)
+			} catch (err) {
+				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
+				webServer.logger.error({ label: 'ERROR', description, body: err, request })
+				return new PResponse({
+					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
+					status: 500
+				})
+			}
+		}
+
+		/* Busca el nombre de la función */
+		let functionName = ''
+		while (!functionName) {
+			const part = pathParts[i]
+			if (typeof routeObject[request.method + '$' + part] == 'function') {
+				functionName = request.method + '$' + part
+				i++
+			} else if (typeof routeObject['$' + part] == 'function') {
+				functionName = '$' + part
+				i++
+			} else if (typeof routeObject['$index'] == 'function') {
+				/* Si no se ha encontrado la función indicada en la URL, se buscará la función $index, de existir, se invocará automáticamente a ésta, dejando a 'part' con el rol de parámetro */
+				functionName = '$index'
+			} else {
+				return await notFound(this, 'function', pathToRoute, functionName, request, session)
+			}
+		}
+
+		/* Busca los parámetros */
+		while (i < pathParts.length) {
+			const part = pathParts[i]
+			parameters.push(decodeURIComponent(part).trim())
+			i++
+		}
+
+		const toExecute = routeObject[functionName]
+
+		if (toExecute == null) return new PResponse({
+			body: `'${functionName}' no existe como método de ruta`,
+			status: 404
+		})
+
+		if (typeof toExecute != 'function' || toExecute.constructor.name != 'AsyncFunction') return new PResponse({
+			body: `'${functionName}' no es una función válida de ruta`,
+			status: 500
+		})
+
+		/* Verifica si la librería tiene definida una lista blanca de IPs */
+		if (routeObject.whiteList.length && !routeObject.whiteList.includes(request.ip)) return new PResponse({
+			body: `Acceso prohibido al IP '${request.ip}'`,
+			status: 401
+		})
+
+		/* Verifica si la librería tiene definida una lista blanca de IPs */
+		if (routeObject.blackList.length && routeObject.blackList.includes(request.ip)) return new PResponse({
+			body: `Acceso prohibido al IP '${request.ip}'`,
+			status: 401
+		})
+
+		/* Ejecuta el evento antes de llamar a la función */
+		try {
+			const response = await config.events?.beforeExecute?.(routeObject, request, session)
+			if (response) return response
+		} catch (err) {
+			const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
+			webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+			return new PResponse({
+				body: subtitle,
+				status: 500
+			})
+		}
+
+		let result: unknown
+		try {
+			result = await toExecute.apply(routeObject, parameters)
+		} catch (err) {
+			const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
+			webServer.logger.error({ label: 'ERROR', description, body: err, request })
+			result = new PResponse({
+				body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
+				status: 500
+			})
+		} finally {
+			/* Ejecuta el método finally de la ruta */
+			try {
+				await routeObject.finally()
+			} catch (err) {
+				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
+				webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+				result = new PResponse({
+					body: subtitle,
+					status: 500
+				})
+			}
+		}
+
+		/* Devuelve la respuesta de la función */
+		if (result instanceof PResponse) {
+			return result
+		} else {
+			return new PResponse({
+				body: result as ResponseBody,
+				status: 200
+			})
+		}
+	})()
+
+	webServer.logger.system({ label: 'RESPONSE >>>', request })
+	response.cookies.push({
+		name: 'hs',
+		value: session.id,
+		httpOnly: true,
+		sameSite: config.sessions?.sameSiteCookie
+	})
+	return response
 }
 
 export class PWebServer {
@@ -385,7 +633,7 @@ export class PWebServer {
 
 		/* Carga de la ruta dinámica */
 		app.use(async (req: express.Request, res: express.Response) => {
-			const response = await this.detectRoute(req)
+			const response = await detectRoute(this, req)
 			responseToClient(response, res)
 		})
 
@@ -504,252 +752,5 @@ export class PWebServer {
 		error: (params: PWebServerLoggerParams) => logger('error', this.config, params),
 		system: (params: PWebServerLoggerParams) => logger('system', this.config, params),
 		warning: (params: PWebServerLoggerParams) => logger('warning', this.config, params),
-	}
-
-	private async detectRoute(req): Promise<PResponse> {
-		const config = this.config
-		const request = new PRequest(req)
-		const session = new Session({
-			ip: request.ip,
-			hs: request.cookies?.hs,
-			hostname: request.hostname,
-			userAgent: request.headers['user-agent'] ?? '',
-			minutesExpiration: config.sessions.minutesExpiration,
-			sessions: this.sessions,
-			storeMethod: config.sessions.storeMethod,
-			pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
-			storePath: config.sessions.storeMethod == StoreMethod.files ? config.sessions.path : undefined
-		})
-
-		/* Detiene la llamada en caso el protocolo sea diferente */
-		const httpsWebServerPort = config.instances.https?.port
-		if (request.protocol == 'http' && httpsWebServerPort) {
-			return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
-		}
-
-		this.logger.system({ label: '>>> REQUEST', request })
-
-		/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
-		if (config.events?.requestReceived) {
-			let response: PResponse | void
-			try {
-				response = await config.events.requestReceived(request, session)
-			} catch (err) {
-				const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
-				this.logger.error({ label: 'EVENTS', description: message, body: err, request })
-				return new PResponse({
-					body: message,
-					status: 503
-				})
-			}
-			if (response) return response
-		}
-
-		const response: PResponse = await (async (): Promise<PResponse> => {
-			const parameters = []
-
-			/* Se extrae el path, en caso no lo tenga, se utiliza el path por defecto establecido en la configuración */
-			let requestPathUrl = this.config.baseUrl ? request.pathUrl.replace(new RegExp('^' + this.config.baseUrl + '(\\/|$)'), '') : request.pathUrl
-			if (config.remap && requestPathUrl) {
-				for (const r of config.remap) {
-					const requestPathUrlResult = requestPathUrl.replace(r.from, r.to)
-					if (requestPathUrl != requestPathUrlResult) {
-						requestPathUrl = requestPathUrlResult
-						request.remap = requestPathUrlResult
-						break
-					}
-				}
-			}
-			const pathUrl = requestPathUrl || (config.defaultRoute ?? '')
-
-			/* Se valida si el pathUrl apunta a un archivo en public */
-			if (config.public) {
-				let pathUrlCopy = pathUrl
-				if (config.public.urlPath && request.pathUrl.match(new RegExp('^' + config.public.urlPath))) {
-					pathUrlCopy = request.pathUrl.replace(new RegExp('^' + config.public.urlPath), '')
-				}
-				const publicFilePath = path.join(config.public.path, pathUrlCopy)
-				if (PUtils.Files.existsFile(publicFilePath)) {
-					return new PResponse({
-						body: new PFileInfo({ filePath: publicFilePath }),
-						status: 200
-					})
-				}
-			}
-
-			/* Se descompone el path */
-			const pathParts = pathUrl.split('/').filter(part => !['.', '..'].includes(part))
-
-			/* Se obtiene la ruta solicitada por el usuario y se descompone para ubicar la función a ejecutar. */
-			const pathToRouteArray = [config.paths.routes]
-			const relativePathToRouteArray: string[] = []
-
-			/* Recorre en cada parte de la ruta y busca el objeto de la ruta. De no encontrarlo, responderá con un 404 */
-			let i = 0
-			let routeObject: PRoute
-			let part = pathParts[i]
-			let pathToRoute = ''
-			while (!routeObject) {
-				pathToRoute = path.join(...pathToRouteArray, part)
-
-				const elementExists = fs.existsSync(pathToRoute)
-				if (elementExists) {
-					/* Si el elemento existe, se evalúa si se trata de un directorio, si no lo es, se responde con error 404 */
-					const statsInfo = fs.statSync(pathToRoute)
-					if (statsInfo.isDirectory) {
-						pathToRouteArray.push(part)
-						relativePathToRouteArray.push(part)
-						i++
-						part = pathParts[i]
-						if (part == null) part = 'index'
-						continue
-					} else {
-						return await notFound(this, 'script', pathToRoute, '', request, session)
-					}
-				} else {
-					/* Si el elemento no existe, se evalúa si existe como archivo aagregándole las extensiones correspondientes */
-					const javascriptFileExists = fs.existsSync(`${pathToRoute}.js`)
-					const typescriptFileExists = fs.existsSync(`${pathToRoute}.ts`)
-					let ext = ''
-					if (javascriptFileExists) {
-						ext = '.js'
-					} else if (typescriptFileExists) {
-						ext = '.ts'
-					}
-
-					if (ext) {
-						pathToRoute += ext
-						pathToRouteArray.push(part + ext)
-						relativePathToRouteArray.push(part + ext)
-						i++
-					} else {
-						if (part != 'index') {
-							i--
-							part = 'index'
-							continue
-						} else {
-							return await notFound(this, 'script', pathToRoute, '', request, session)
-						}
-					}
-				}
-
-				try {
-					const routeClass = await loadRouteClass(this, pathToRoute)
-					routeObject = new routeClass(this, request, session)
-				} catch (err) {
-					const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
-					this.logger.error({ label: 'ERROR', description, body: err, request })
-					return new PResponse({
-						body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
-						status: 500
-					})
-				}
-			}
-
-			/* Busca el nombre de la función */
-			let functionName = ''
-			while (!functionName) {
-				const part = pathParts[i]
-				if (typeof routeObject[request.method + '$' + part] == 'function') {
-					functionName = request.method + '$' + part
-					i++
-				} else if (typeof routeObject['$' + part] == 'function') {
-					functionName = '$' + part
-					i++
-				} else if (typeof routeObject['$index'] == 'function') {
-					/* Si no se ha encontrado la función indicada en la URL, se buscará la función $index, de existir, se invocará automáticamente a ésta, dejando a 'part' con el rol de parámetro */
-					functionName = '$index'
-				} else {
-					return await notFound(this, 'function', pathToRoute, functionName, request, session)
-				}
-			}
-
-			/* Busca los parámetros */
-			while (i < pathParts.length) {
-				const part = pathParts[i]
-				parameters.push(decodeURIComponent(part).trim())
-				i++
-			}
-
-			const toExecute = routeObject[functionName]
-
-			if (toExecute == null) return new PResponse({
-				body: `'${functionName}' no existe como método de ruta`,
-				status: 404
-			})
-
-			if (typeof toExecute != 'function' || toExecute.constructor.name != 'AsyncFunction') return new PResponse({
-				body: `'${functionName}' no es una función válida de ruta`,
-				status: 500
-			})
-
-			/* Verifica si la librería tiene definida una lista blanca de IPs */
-			if (routeObject.whiteList.length && !routeObject.whiteList.includes(request.ip)) return new PResponse({
-				body: `Acceso prohibido al IP '${request.ip}'`,
-				status: 401
-			})
-
-			/* Verifica si la librería tiene definida una lista blanca de IPs */
-			if (routeObject.blackList.length && routeObject.blackList.includes(request.ip)) return new PResponse({
-				body: `Acceso prohibido al IP '${request.ip}'`,
-				status: 401
-			})
-
-			/* Ejecuta el evento antes de llamar a la función */
-			try {
-				const response = await config.events?.beforeExecute?.(routeObject, request, session)
-				if (response) return response
-			} catch (err) {
-				const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
-				this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-				return new PResponse({
-					body: subtitle,
-					status: 500
-				})
-			}
-
-			let result: unknown
-			try {
-				result = await toExecute.apply(routeObject, parameters)
-			} catch (err) {
-				const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
-				await this.logger.error({ label: 'ERROR', description, body: err, request })
-				result = new PResponse({
-					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
-					status: 500
-				})
-			} finally {
-				/* Ejecuta el método finally de la ruta */
-				try {
-					await routeObject.finally()
-				} catch (err) {
-					const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
-					this.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
-					result = new PResponse({
-						body: subtitle,
-						status: 500
-					})
-				}
-			}
-
-			/* Devuelve la respuesta de la función */
-			if (result instanceof PResponse) {
-				return result
-			} else {
-				return new PResponse({
-					body: result as ResponseBody,
-					status: 200
-				})
-			}
-		})()
-
-		this.logger.system({ label: 'RESPONSE >>>', request })
-		response.cookies.push({
-			name: 'hs',
-			value: session.id,
-			httpOnly: true,
-			sameSite: config.sessions?.sameSiteCookie
-		})
-		return response
 	}
 }
