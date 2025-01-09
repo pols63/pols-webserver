@@ -220,9 +220,9 @@ export class PWebServer {
 		const v = validate<PWebServerParams>(config, rules({ required: true }).isObject({
 			paths: rules({ required: true }).isObject({
 				logs: rules({ default: './' }).isAlphanumeric(),
-				route: rules({ required: true }).isAlphanumeric(),
+				routes: rules({ required: true }).isAlphanumeric(),
 				uploads: rules({ default: './' }).isAlphanumeric()
-			}, 'paths.'),
+			}, 'paths >'),
 			sizeRequest: rules({ default: 50 }).isNumber().gt(0)
 		}))
 		if (v.error == true) throw new Error(v.messages[0])
