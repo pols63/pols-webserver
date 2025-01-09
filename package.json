@@ -6,7 +6,8 @@
 	"types": "dist/index.d.ts",
 	"scripts": {
 		"build": "npx tsc",
-		"test": "npx ts-node-dev -r tsconfig-paths/register --project tsconfig.json"
+		"test": "npx ts-node-dev -r tsconfig-paths/register --project tsconfig.json",
+		"publish": "npm run build && git publish"
 	},
 	"author": "Jean Paul Sánchez mendoza",
 	"license": "ISC",
