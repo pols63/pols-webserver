@@ -45,11 +45,12 @@ export type PSessionParams = {
 	storeMethod: PSessionStoreFunctions
 })
 
-export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePath, sessionCollection }: {
+export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePath, sessionCollection, deleteOldBodies }: {
 	storeMethod: PSessionStoreMethod | PSessionStoreFunctions
 	minutesExpiration: number
 	storePath?: string
 	sessionCollection?: PSessionCollection
+	deleteOldBodies?: (minutesExpiration: number) => Promise<void>
 }) => {
 	const expirationTime = new Date
 	expirationTime.setMinutes(expirationTime.getMinutes() - minutesExpiration)
@@ -84,11 +85,7 @@ export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePa
 			break
 		}
 		default: {
-			for (const id in sessionCollection) {
-				if (new Date(sessionCollection[id].lastCheck) < expirationTime) {
-					await storeMethod.destroyBody(id)
-				}
-			}
+			await deleteOldBodies?.(minutesExpiration)
 		}
 	}
 }
@@ -215,7 +212,11 @@ export class PSession {
 				default: {
 					try {
 						this.body = await this.storeMethod.getBody(this._id)
-						if (!await this.checkValidBody(now, expirationTime)) continue
+						if (this.body) {
+							if (!await this.checkValidBody(now, expirationTime)) continue
+						} else {
+							this.body = newBody
+						}
 					} catch {
 						await this.storeMethod.destroyBody(this._id)
 						this.body = newBody

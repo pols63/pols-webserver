@@ -74,7 +74,9 @@ export type PWebServerParams = {
 	} | {
 		storeMethod: PSessionStoreMethod.memory
 	} | {
-		storeMethod: PSessionStoreFunctions
+		storeMethod: PSessionStoreFunctions & {
+			deleteOldBodies?: (minutesExpiration: number) => Promise<void>
+		}
 	})
 	logs?: {
 		console?: boolean | {
@@ -503,36 +505,37 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 }
 
 const deleteOldFiles = async (webServer: PWebServer) => {
-		/* Elimina sesiones antiguas */
-		const config = webServer.config
-		await clearOldSessions({
-			storeMethod: config.sessions.storeMethod,
-			minutesExpiration: config.sessions.minutesExpiration,
-			storePath: 'path' in config.sessions ? config.sessions.path : null,
-			sessionCollection: webServer.sessions
-		})
+	/* Elimina sesiones antiguas */
+	const config = webServer.config
+	await clearOldSessions({
+		storeMethod: config.sessions.storeMethod,
+		minutesExpiration: config.sessions.minutesExpiration,
+		storePath: (config.sessions.storeMethod == PSessionStoreMethod.files && 'path' in config.sessions) ? config.sessions.path : null,
+		sessionCollection: webServer.sessions,
+		deleteOldBodies: (typeof config.sessions.storeMethod == 'object' && 'deleteOldBodies' in config.sessions.storeMethod) ? config.sessions.storeMethod.deleteOldBodies : null,
+	})
 
-		/* Elimina archivos subidos antiguos */
-		if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtils.Files.existsDirectory(webServer.paths.uploads)) {
-			const files = fs.readdirSync(webServer.paths.uploads)
-			const expirationTime = new Date
-			expirationTime.setMinutes(expirationTime.getMinutes() - config.oldFilesInUploadsFolder.minutesExpiration)
-			for (const file of files) {
-				if (['.', '..'].includes(file)) continue
-				const filePath = path.join(webServer.paths.uploads, file)
-				const stats = fs.statSync(filePath)
-				if (!stats.isFile()) continue
-				if (stats.ctime < expirationTime && stats.size > 0) {
-					try {
-						fs.unlinkSync(filePath)
-						webServer.logger.info({ label: 'FILE DELETED', description: file })
-					} catch (err) {
-						webServer.logger.error({ label: 'ERROR', description: `Error al intentar borrar el archivo "${file}"`, body: err })
-					}
+	/* Elimina archivos subidos antiguos */
+	if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtils.Files.existsDirectory(webServer.paths.uploads)) {
+		const files = fs.readdirSync(webServer.paths.uploads)
+		const expirationTime = new Date
+		expirationTime.setMinutes(expirationTime.getMinutes() - config.oldFilesInUploadsFolder.minutesExpiration)
+		for (const file of files) {
+			if (['.', '..'].includes(file)) continue
+			const filePath = path.join(webServer.paths.uploads, file)
+			const stats = fs.statSync(filePath)
+			if (!stats.isFile()) continue
+			if (stats.ctime < expirationTime && stats.size > 0) {
+				try {
+					fs.unlinkSync(filePath)
+					webServer.logger.info({ label: 'FILE DELETED', description: file })
+				} catch (err) {
+					webServer.logger.error({ label: 'ERROR', description: `Error al intentar borrar el archivo "${file}"`, body: err })
 				}
 			}
 		}
 	}
+}
 
 export class PWebServer {
 	config: Readonly<PWebServerParams>
