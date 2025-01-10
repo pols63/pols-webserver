@@ -1,4 +1,4 @@
-import { PSession, PSessionCollection, PSessionBody, PSessionStoreMethod, PSessionStoreFunctions } from './session'
+import { PSession, PSessionCollection, PSessionBody, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
 import { PUtils, PLogger } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, ResponseBody } from './response'
@@ -502,6 +502,38 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 	return response
 }
 
+const deleteOldFiles = async (webServer: PWebServer) => {
+		/* Elimina sesiones antiguas */
+		const config = webServer.config
+		await clearOldSessions({
+			storeMethod: config.sessions.storeMethod,
+			minutesExpiration: config.sessions.minutesExpiration,
+			storePath: 'path' in config.sessions ? config.sessions.path : null,
+			sessionCollection: webServer.sessions
+		})
+
+		/* Elimina archivos subidos antiguos */
+		if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtils.Files.existsDirectory(webServer.paths.uploads)) {
+			const files = fs.readdirSync(webServer.paths.uploads)
+			const expirationTime = new Date
+			expirationTime.setMinutes(expirationTime.getMinutes() - config.oldFilesInUploadsFolder.minutesExpiration)
+			for (const file of files) {
+				if (['.', '..'].includes(file)) continue
+				const filePath = path.join(webServer.paths.uploads, file)
+				const stats = fs.statSync(filePath)
+				if (!stats.isFile()) continue
+				if (stats.ctime < expirationTime && stats.size > 0) {
+					try {
+						fs.unlinkSync(filePath)
+						webServer.logger.info({ label: 'FILE DELETED', description: file })
+					} catch (err) {
+						webServer.logger.error({ label: 'ERROR', description: `Error al intentar borrar el archivo "${file}"`, body: err })
+					}
+				}
+			}
+		}
+	}
+
 export class PWebServer {
 	config: Readonly<PWebServerParams>
 	private oldFilesDeleterInterval?: ReturnType<typeof setInterval>
@@ -633,7 +665,16 @@ export class PWebServer {
 
 		/* Carga de la ruta dinámica */
 		app.use(async (req: express.Request, res: express.Response) => {
-			const response = await detectRoute(this, req)
+			let response: PResponse
+			try {
+				response = await detectRoute(this, req)
+			} catch (error) {
+				this.logger.error({ label: 'ERROR', description: `Ocurrió un error en la ejecución del evento 'beforeExecute'`, body: error })
+				response = new PResponse({
+					body: 'Error en el servidor',
+					status: 500
+				})
+			}
 			responseToClient(response, res)
 		})
 
@@ -675,8 +716,8 @@ export class PWebServer {
 			})
 		}
 
-		this.oldFilesDeleterInterval = setInterval(this.deleteOldFiles.bind(this), 1000 * 60)
-		this.deleteOldFiles()
+		this.oldFilesDeleterInterval = setInterval(() => deleteOldFiles(this), 1000 * 60)
+		deleteOldFiles(this)
 	}
 
 	stop() {
@@ -687,62 +728,6 @@ export class PWebServer {
 		this.serverTls?.close(() => {
 			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTP detenido` })
 		})
-	}
-
-	private async deleteOldFiles() {
-		/* Elimina sesiones antiguas */
-		const config = this.config
-		const expirationTime = new Date
-		expirationTime.setMinutes(expirationTime.getMinutes() - config.sessions.minutesExpiration)
-		switch (config.sessions.storeMethod) {
-			case PSessionStoreMethod.files: {
-				if (!PUtils.Files.existsDirectory(config.sessions.path)) break
-				const files = fs.readdirSync(config.sessions.path)
-				for (const file of files) {
-					if (['.', '..'].includes(file)) continue
-					const filePath = path.join(config.sessions.path, file)
-					const stats = fs.statSync(filePath)
-					if (!stats.isFile()) continue
-					try {
-						const sessionBody: PSessionBody = JSON.parse(fs.readFileSync(filePath, { encoding: 'utf-8' }))
-						if (new Date(sessionBody.lastCheck) < expirationTime) {
-							fs.unlinkSync(filePath)
-						}
-					} catch {
-						fs.unlinkSync(filePath)
-					}
-				}
-				break
-			}
-			case PSessionStoreMethod.memory: {
-				for (const id in this.sessions) {
-					if (new Date(this.sessions[id].lastCheck) < expirationTime) {
-						delete this.sessions[id]
-					}
-				}
-				break
-			}
-		}
-		/* Elimina archivos subidos antiguos */
-		if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtils.Files.existsDirectory(this.paths.uploads)) {
-			const files = fs.readdirSync(this.paths.uploads)
-			const expirationTime = new Date
-			expirationTime.setMinutes(expirationTime.getMinutes() - config.oldFilesInUploadsFolder.minutesExpiration)
-			for (const file of files) {
-				if (['.', '..'].includes(file)) continue
-				const filePath = path.join(this.paths.uploads, file)
-				const stats = fs.statSync(filePath)
-				if (!stats.isFile()) continue
-				if (stats.ctime < expirationTime && stats.size > 0) {
-					try {
-						fs.unlinkSync(filePath)
-						this.logger.info({ label: 'FILE DELETED', description: file })
-					} catch (err) {
-						this.logger.error({ label: 'ERROR', description: `Error al intentar borrar el archivo "${file}"`, body: err })
-					}
-				}
-			}
-		}
 	}
 
 	logger = {

@@ -45,6 +45,54 @@ export type PSessionParams = {
 	storeMethod: PSessionStoreFunctions
 })
 
+export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePath, sessionCollection }: {
+	storeMethod: PSessionStoreMethod | PSessionStoreFunctions
+	minutesExpiration: number
+	storePath?: string
+	sessionCollection?: PSessionCollection
+}) => {
+	const expirationTime = new Date
+	expirationTime.setMinutes(expirationTime.getMinutes() - minutesExpiration)
+	switch (storeMethod) {
+		case PSessionStoreMethod.files: {
+			if (!storePath) throw new Error(`'storePath' es requerido`)
+			if (!PUtils.Files.existsDirectory(storePath)) break
+			const files = fs.readdirSync(storePath)
+			for (const file of files) {
+				if (['.', '..'].includes(file)) continue
+				const filePath = path.join(storePath, file)
+				const stats = fs.statSync(filePath)
+				if (!stats.isFile()) continue
+				try {
+					const sessionBody: PSessionBody = JSON.parse(fs.readFileSync(filePath, { encoding: 'utf-8' }))
+					if (new Date(sessionBody.lastCheck) < expirationTime) {
+						fs.unlinkSync(filePath)
+					}
+				} catch {
+					fs.unlinkSync(filePath)
+				}
+			}
+			break
+		}
+		case PSessionStoreMethod.memory: {
+			if (!sessionCollection) throw new Error(`'sessionCollection' es requerido`)
+			for (const id in sessionCollection) {
+				if (new Date(sessionCollection[id].lastCheck) < expirationTime) {
+					delete sessionCollection[id]
+				}
+			}
+			break
+		}
+		default: {
+			for (const id in sessionCollection) {
+				if (new Date(sessionCollection[id].lastCheck) < expirationTime) {
+					await storeMethod.delete(id)
+				}
+			}
+		}
+	}
+}
+
 export class PSession {
 	private _id: string
 	private hostname: string
