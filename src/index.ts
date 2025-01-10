@@ -1,4 +1,4 @@
-import { PSession, SessionCollection, SessionBody, StoreMethod, StoreMethodFunction } from './session'
+import { PSession, PSessionCollection, PSessionBody, PSessionStoreMethod, PSessionStoreFunctions } from './session'
 import { PUtils, PLogger } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, ResponseBody } from './response'
@@ -68,13 +68,13 @@ export type PWebServerParams = {
 		minutesExpiration: number
 		sameSiteCookie?: 'strict' | 'lax' | 'none'
 	} & ({
-		storeMethod: StoreMethod.files
+		storeMethod: PSessionStoreMethod.files
 		path: string
 		pretty?: boolean
 	} | {
-		storeMethod: StoreMethod.memory
+		storeMethod: PSessionStoreMethod.memory
 	} | {
-		storeMethod: StoreMethodFunction
+		storeMethod: PSessionStoreFunctions
 	})
 	logs?: {
 		console?: boolean | {
@@ -198,7 +198,7 @@ const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Soc
 		sessions: webServer.sessions,
 		storeMethod: config.sessions.storeMethod,
 		pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
-		storePath: config.sessions.storeMethod == StoreMethod.files ? config.sessions.path : undefined
+		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined
 	})
 	webServer.config.instances.webSocket.connectionEvent?.(clientSocket, session)
 	if (events) {
@@ -266,7 +266,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		sessions: webServer.sessions,
 		storeMethod: config.sessions.storeMethod,
 		pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
-		storePath: config.sessions.storeMethod == StoreMethod.files ? config.sessions.path : undefined
+		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined
 	})
 	await session.start()
 
@@ -505,7 +505,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 export class PWebServer {
 	config: Readonly<PWebServerParams>
 	private oldFilesDeleterInterval?: ReturnType<typeof setInterval>
-	public sessions: SessionCollection = {}
+	public sessions: PSessionCollection = {}
 	readonly paths: {
 		readonly logs: string
 		readonly routes: string
@@ -540,7 +540,7 @@ export class PWebServer {
 		if (config.defaultRoute && config.defaultRoute.match(/^(\/|\\)/)) throw new Error(`La propiedad de configuración 'defaultRoute' no debe iniciar con '\\' o '/'`)
 
 		/* Valida la configuración de las sesiones */
-		if (config.sessions.storeMethod == StoreMethod.files) {
+		if (config.sessions.storeMethod == PSessionStoreMethod.files) {
 			if (!config.sessions.path) throw new Error(`Se debe indicar una ruta válida para almacenar las sesiones en 'sessions.path' cuando 'sessions.store' es igual a 'files'`)
 		}
 		if (config.sessions.minutesExpiration < 0) throw new Error(`La propiedad 'sessions.minutesExpiration' debe ser mayor o igual a cero`)
@@ -555,7 +555,7 @@ export class PWebServer {
 		this.paths = {
 			logs: config.paths.logs,
 			routes: config.paths.routes,
-			sessions: config.sessions.storeMethod == StoreMethod.files ? config.sessions.path : undefined,
+			sessions: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
 			uploads: config.paths.uploads,
 			public: config.public?.path,
 		}
@@ -695,7 +695,7 @@ export class PWebServer {
 		const expirationTime = new Date
 		expirationTime.setMinutes(expirationTime.getMinutes() - config.sessions.minutesExpiration)
 		switch (config.sessions.storeMethod) {
-			case StoreMethod.files: {
+			case PSessionStoreMethod.files: {
 				if (!PUtils.Files.existsDirectory(config.sessions.path)) break
 				const files = fs.readdirSync(config.sessions.path)
 				for (const file of files) {
@@ -704,7 +704,7 @@ export class PWebServer {
 					const stats = fs.statSync(filePath)
 					if (!stats.isFile()) continue
 					try {
-						const sessionBody: SessionBody = JSON.parse(fs.readFileSync(filePath, { encoding: 'utf-8' }))
+						const sessionBody: PSessionBody = JSON.parse(fs.readFileSync(filePath, { encoding: 'utf-8' }))
 						if (new Date(sessionBody.lastCheck) < expirationTime) {
 							fs.unlinkSync(filePath)
 						}
@@ -714,7 +714,7 @@ export class PWebServer {
 				}
 				break
 			}
-			case StoreMethod.memory: {
+			case PSessionStoreMethod.memory: {
 				for (const id in this.sessions) {
 					if (new Date(this.sessions[id].lastCheck) < expirationTime) {
 						delete this.sessions[id]

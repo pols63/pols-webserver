@@ -3,18 +3,18 @@ import * as path from 'path'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
 
-export enum StoreMethod {
+export enum PSessionStoreMethod {
 	files = 'files',
 	memory = 'memory',
 }
 
-export type StoreMethodFunction = {
-	get: (id: string) => Promise<SessionBody | null | undefined>
-	save: (id: string, data: SessionBody) => Promise<void>
+export type PSessionStoreFunctions = {
+	get: (id: string) => Promise<PSessionBody | null | undefined>
+	save: (id: string, data: PSessionBody) => Promise<void>
 	delete: (id: string) => Promise<void>
 }
 
-export type SessionBody = {
+export type PSessionBody = {
 	ip: string
 	lastCheck: Date
 	userAgent: string
@@ -24,25 +24,25 @@ export type SessionBody = {
 	}
 }
 
-export type SessionCollection = {
-	[id: string]: SessionBody
+export type PSessionCollection = {
+	[id: string]: PSessionBody
 }
 
-export type Params = {
+export type PSessionParams = {
 	hs?: string
 	hostname: string
 	ip: string
 	userAgent: string
 	minutesExpiration: number
-	sessions: SessionCollection
+	sessions: PSessionCollection
 } & ({
-	storeMethod: StoreMethod.memory
+	storeMethod: PSessionStoreMethod.memory
 } | {
-	storeMethod: StoreMethod.files
+	storeMethod: PSessionStoreMethod.files
 	storePath: string
 	pretty?: boolean
 } | {
-	storeMethod: StoreMethodFunction
+	storeMethod: PSessionStoreFunctions
 })
 
 export class PSession {
@@ -50,9 +50,9 @@ export class PSession {
 	private hostname: string
 	private ip: string
 	private userAgent: string
-	private body?: SessionBody
-	private sessions: SessionCollection
-	private storeMethod: StoreMethod | StoreMethodFunction
+	private body?: PSessionBody
+	private sessions: PSessionCollection
+	private storeMethod: PSessionStoreMethod | PSessionStoreFunctions
 	private storePath?: string
 	private pretty?: boolean
 	private minutesExpiration: number
@@ -65,7 +65,7 @@ export class PSession {
 		return this.body?.lastCheck
 	}
 
-	constructor(params: Params) {
+	constructor(params: PSessionParams) {
 		/* Obtiene el ID de la sesión */
 		this._id = params.hs ?? ''
 		this.hostname = params.hostname
@@ -74,7 +74,7 @@ export class PSession {
 		this.sessions = params.sessions
 		this.storeMethod = params.storeMethod
 		switch (params.storeMethod) {
-			case StoreMethod.files:
+			case PSessionStoreMethod.files:
 				this.storePath = params.storePath
 				this.pretty = params.pretty
 				break
@@ -84,7 +84,7 @@ export class PSession {
 
 	private checkPath() {
 		/* Valida la existencia del directorio de sesiones e intenta crearlo si es necesario */
-		if (this.storeMethod == StoreMethod.files) {
+		if (this.storeMethod == PSessionStoreMethod.files) {
 			if (!PUtils.Files.existsDirectory(this.storePath)) {
 				try {
 					fs.mkdirSync(this.storePath)
@@ -122,12 +122,12 @@ export class PSession {
 		) {
 			/* Si ya venía de parte del cliente un ID, pero ésta no existe en memoria, se regenera por seguridad */
 			switch (this.storeMethod) {
-				case StoreMethod.files: {
+				case PSessionStoreMethod.files: {
 					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
 					if (!PUtils.Files.existsFile(bodyFilePath)) this.generateID()
 					break
 				}
-				case StoreMethod.memory:
+				case PSessionStoreMethod.memory:
 					if (!this.sessions[this._id]) this.generateID()
 					break
 				default:
@@ -141,7 +141,7 @@ export class PSession {
 		expirationTime.setMinutes(expirationTime.getMinutes() - this.minutesExpiration)
 
 		/* Si el ID de inicio de sesión está vacío, crea una nueva sesión */
-		const newBody: SessionBody = {
+		const newBody: PSessionBody = {
 			ip: this.ip,
 			lastCheck: now,
 			userAgent: this.userAgent,
@@ -151,7 +151,7 @@ export class PSession {
 
 		while (!this.body) {
 			switch (this.storeMethod) {
-				case StoreMethod.files: {
+				case PSessionStoreMethod.files: {
 					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
 					if (PUtils.Files.existsFile(bodyFilePath)) {
 						try {
@@ -167,7 +167,7 @@ export class PSession {
 					this.save()
 					break
 				}
-				case StoreMethod.memory:
+				case PSessionStoreMethod.memory:
 					if (this.sessions[this._id]) {
 						this.body = this.sessions[this._id]
 						if (!this.checkValidBody(now, expirationTime)) continue
@@ -196,12 +196,12 @@ export class PSession {
 		while (!generated) {
 			this._id = crypto.randomUUID()
 			switch (this.storeMethod) {
-				case StoreMethod.files: {
+				case PSessionStoreMethod.files: {
 					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
 					if (!PUtils.Files.existsFile(bodyFilePath)) generated = true
 					break
 				}
-				case StoreMethod.memory: {
+				case PSessionStoreMethod.memory: {
 					if (!this.sessions[this._id]) generated = true
 					break
 				}
@@ -219,12 +219,12 @@ export class PSession {
 
 	async save() {
 		switch (this.storeMethod) {
-			case StoreMethod.files: {
+			case PSessionStoreMethod.files: {
 				const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
 				fs.writeFileSync(bodyFilePath, PUtils.JSON.stringify(this.body, this.pretty ? '\t' : undefined), { encoding: 'utf-8' })
 				break
 			}
-			case StoreMethod.memory:
+			case PSessionStoreMethod.memory:
 				if (this.body) this.sessions[this._id] = this.body
 				break
 			default:
@@ -235,12 +235,12 @@ export class PSession {
 
 	async destroy() {
 		switch (this.storeMethod) {
-			case StoreMethod.files: {
+			case PSessionStoreMethod.files: {
 				const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
 				if (PUtils.Files.existsFile(bodyFilePath)) fs.unlinkSync(bodyFilePath)
 				break
 			}
-			case StoreMethod.memory: {
+			case PSessionStoreMethod.memory: {
 				delete this.sessions[this._id]
 				break
 			}
