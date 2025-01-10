@@ -9,9 +9,9 @@ export enum PSessionStoreMethod {
 }
 
 export type PSessionStoreFunctions = {
-	get: (id: string) => Promise<PSessionBody | null | undefined>
-	save: (id: string, data: PSessionBody) => Promise<void>
-	delete: (id: string) => Promise<void>
+	getBody: (id: string) => Promise<PSessionBody | null | undefined>
+	saveBody: (id: string, data: PSessionBody) => Promise<void>
+	destroyBody: (id: string) => Promise<void>
 }
 
 export type PSessionBody = {
@@ -86,7 +86,7 @@ export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePa
 		default: {
 			for (const id in sessionCollection) {
 				if (new Date(sessionCollection[id].lastCheck) < expirationTime) {
-					await storeMethod.delete(id)
+					await storeMethod.destroyBody(id)
 				}
 			}
 		}
@@ -143,7 +143,7 @@ export class PSession {
 		}
 	}
 
-	private checkValidBody(now: Date, expirationTime: Date): boolean {
+	private async checkValidBody(now: Date, expirationTime: Date): Promise<boolean> {
 		if (
 			!this.body
 			|| !this.body.lastCheck
@@ -152,7 +152,7 @@ export class PSession {
 			|| this.body?.hostname != this.hostname
 		) {
 			this.body = undefined
-			this.generateID()
+			await this.generateID()
 			return false
 		} else {
 			this.body.lastCheck = now
@@ -169,19 +169,7 @@ export class PSession {
 			|| !this._id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
 		) {
 			/* Si ya venía de parte del cliente un ID, pero ésta no existe en memoria, se regenera por seguridad */
-			switch (this.storeMethod) {
-				case PSessionStoreMethod.files: {
-					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-					if (!PUtils.Files.existsFile(bodyFilePath)) this.generateID()
-					break
-				}
-				case PSessionStoreMethod.memory:
-					if (!this.sessions[this._id]) this.generateID()
-					break
-				default:
-					if (!this.storeMethod.get(this._id)) this.generateID()
-					break
-			}
+			await this.generateID()
 		}
 
 		const now = new Date
@@ -204,7 +192,7 @@ export class PSession {
 					if (PUtils.Files.existsFile(bodyFilePath)) {
 						try {
 							this.body = JSON.parse(fs.readFileSync(bodyFilePath, { encoding: 'utf-8' }))
-							if (!this.checkValidBody(now, expirationTime)) continue
+							if (!await this.checkValidBody(now, expirationTime)) continue
 						} catch {
 							fs.unlinkSync(bodyFilePath)
 							this.body = newBody
@@ -218,7 +206,7 @@ export class PSession {
 				case PSessionStoreMethod.memory:
 					if (this.sessions[this._id]) {
 						this.body = this.sessions[this._id]
-						if (!this.checkValidBody(now, expirationTime)) continue
+						if (!await this.checkValidBody(now, expirationTime)) continue
 					} else {
 						this.body = newBody
 					}
@@ -226,20 +214,20 @@ export class PSession {
 					break
 				default: {
 					try {
-						this.body = await this.storeMethod.get(this._id)
-						if (!this.checkValidBody(now, expirationTime)) continue
+						this.body = await this.storeMethod.getBody(this._id)
+						if (!await this.checkValidBody(now, expirationTime)) continue
 					} catch {
-						await this.storeMethod.delete(this._id)
+						await this.storeMethod.destroyBody(this._id)
 						this.body = newBody
 					}
-					await this.storeMethod.save(this._id, this.body)
+					await this.storeMethod.saveBody(this._id, this.body)
 					break
 				}
 			}
 		}
 	}
 
-	generateID() {
+	async generateID() {
 		let generated = false
 		while (!generated) {
 			this._id = crypto.randomUUID()
@@ -253,6 +241,9 @@ export class PSession {
 					if (!this.sessions[this._id]) generated = true
 					break
 				}
+				default:
+					if (!await this.storeMethod.getBody(this._id)) generated = true
+					break
 			}
 		}
 	}
@@ -276,7 +267,7 @@ export class PSession {
 				if (this.body) this.sessions[this._id] = this.body
 				break
 			default:
-				await this.storeMethod.save(this._id, this.body)
+				await this.storeMethod.saveBody(this._id, this.body)
 				break
 		}
 	}
@@ -293,7 +284,7 @@ export class PSession {
 				break
 			}
 			default: {
-				await this.storeMethod.delete(this._id)
+				await this.storeMethod.destroyBody(this._id)
 			}
 		}
 	}
