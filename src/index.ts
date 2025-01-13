@@ -72,9 +72,7 @@ export type PWebServerParams = {
 		path: string
 		pretty?: boolean
 	} | {
-		storeMethod: PSessionStoreMethod.memory
-	} | {
-		storeMethod: PSessionStoreFunctions & {
+		storeMethod: PSessionStoreMethod.memory | PSessionStoreFunctions & {
 			deleteOldBodies?: (minutesExpiration: number) => Promise<void>
 		}
 	})
@@ -719,7 +717,7 @@ export class PWebServer {
 			})
 		}
 
-		this.oldFilesDeleterInterval = setInterval(() => deleteOldFiles(this), 1000 * 60)
+		this.oldFilesDeleterInterval = setInterval(() => deleteOldFiles(this), 2000 * 60)
 		deleteOldFiles(this)
 	}
 
