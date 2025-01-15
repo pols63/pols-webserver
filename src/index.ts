@@ -11,7 +11,7 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 import socketIo from 'socket.io'
-import { PLoggerParams } from 'pols-utils/dist/plogger'
+import { PLoggerLogParams, PLoggerParams } from 'pols-utils/dist/plogger'
 
 export type PWebServerEvents = {
 	requestReceived?(request: PRequest, session: PSession): Promise<PResponse | void>
@@ -52,7 +52,6 @@ export type PWebServerParams = {
 	sizeRequest?: number
 	paths: {
 		routes: string
-		logs?: string
 		uploads: string
 	}
 	baseUrl?: string
@@ -77,24 +76,7 @@ export type PWebServerParams = {
 			deleteOldBodies?: (minutesExpiration: number) => Promise<void>
 		}
 	})
-	logs?: {
-		console?: boolean | {
-			info?: boolean
-			error?: boolean
-			warning?: boolean
-			success?: boolean
-			debug?: boolean
-			system?: boolean
-		}
-		file?: boolean | {
-			info?: boolean
-			error?: boolean
-			warning?: boolean
-			success?: boolean
-			debug?: boolean
-			system?: boolean
-		}
-	},
+	logger?: PLogger,
 }
 
 export class PRoute {
@@ -144,46 +126,6 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 	} else {
 		res.send(body ?? '')
 	}
-}
-
-const logger = (method: LoggerType, config: PWebServerParams, { label, description, body, request, exit = false }: PWebServerLoggerParams) => {
-	/* Determina si el mensaje se mostrará en consola */
-	let showInConsole: boolean
-	if (config?.logs?.console == null) {
-		showInConsole = true
-	} else if (typeof config?.logs?.console == 'boolean') {
-		showInConsole = config?.logs?.console
-	} else {
-		showInConsole = (config?.logs?.console?.success && method == 'success')
-			|| (config?.logs?.console?.info && method == 'info')
-			|| (config?.logs?.console?.system && method == 'system')
-			|| (config?.logs?.console?.warning && method == 'warning')
-			|| (config?.logs?.console?.error && method == 'error')
-			|| (config?.logs?.console?.debug && method == 'debug')
-	}
-
-	/* Determina si el mensaje se mostrará en archivo */
-	let showInLogFile: boolean
-	if (config?.logs?.file == null) {
-		showInLogFile = false
-	} else if (typeof config?.logs?.file == 'boolean') {
-		showInLogFile = config?.logs?.file
-	} else {
-		showInLogFile = (config?.logs?.file?.success && method == 'success')
-			|| (config?.logs?.file?.info && method == 'info')
-			|| (config?.logs?.file?.system && method == 'system')
-			|| (config?.logs?.file?.warning && method == 'warning')
-			|| (config?.logs?.file?.error && method == 'error')
-			|| (config?.logs?.file?.debug && method == 'debug')
-	}
-
-	/* Esta variable pintará etiquestas antes de las declaradas en 'tags' */
-	const descriptions = []
-	if (description) descriptions.push(description)
-	if (request?.ip) descriptions.push(request.ip)
-	if (request?.pathUrl) descriptions.push(request.pathUrl)
-
-	PLogger[method]({ label, description: descriptions.join(' :: '), body, exit, showInConsole, logPath: showInLogFile ? (config.paths.logs ?? './') : undefined })
 }
 
 const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
@@ -240,14 +182,14 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 		notFoundEventResponse = await config.events?.notFound?.('script', request, session) as PResponse
 		if (!notFoundEventResponse) {
 			if (type == 'script') {
-				webServer.logger.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'`, request })
+				webServer.log.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'` }, request)
 			} else {
-				webServer.logger.error({ label: 'ERROR', description: `No se encontró la función '${functionName}' en '${pathToRoute}'`, request })
+				webServer.log.error({ label: 'ERROR', description: `No se encontró la función '${functionName}' en '${pathToRoute}'` }, request)
 			}
 		}
 	} catch (err) {
 		const subtitle = `Error al ejecutar el evento 'notFound'`
-		webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+		webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
 		notFoundEventResponse = new PResponse({
 			body: subtitle,
 			status: 500
@@ -279,7 +221,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
 	}
 
-	webServer.logger.system({ label: '>>> REQUEST', request })
+	webServer.log.system({ label: '>>> REQUEST' }, request)
 
 	/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
 	if (config.events?.requestReceived) {
@@ -288,7 +230,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			response = await config.events.requestReceived(request, session)
 		} catch (err) {
 			const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
-			webServer.logger.error({ label: 'EVENTS', description: message, body: err, request })
+			webServer.log.error({ label: 'EVENTS', description: message, body: err }, request)
 			return new PResponse({
 				body: message,
 				status: 503
@@ -390,7 +332,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				routeObject = new routeClass(this, request, session)
 			} catch (err) {
 				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
-				webServer.logger.error({ label: 'ERROR', description, body: err, request })
+				webServer.log.error({ label: 'ERROR', description, body: err }, request)
 				return new PResponse({
 					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 					status: 500
@@ -453,7 +395,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			if (response) return response
 		} catch (err) {
 			const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
-			webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+			webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
 			return new PResponse({
 				body: subtitle,
 				status: 500
@@ -465,7 +407,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			result = await toExecute.apply(routeObject, parameters)
 		} catch (err) {
 			const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
-			webServer.logger.error({ label: 'ERROR', description, body: err, request })
+			webServer.log.error({ label: 'ERROR', description, body: err }, request)
 			result = new PResponse({
 				body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 				status: 500
@@ -476,7 +418,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				await routeObject.finally()
 			} catch (err) {
 				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
-				webServer.logger.error({ label: 'ERROR', description: subtitle, body: err, request })
+				webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
 				result = new PResponse({
 					body: subtitle,
 					status: 500
@@ -495,7 +437,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		}
 	})()
 
-	webServer.logger.system({ label: 'RESPONSE >>>', request })
+	webServer.log.system({ label: 'RESPONSE >>>' }, request)
 	response.cookies.push({
 		name: 'hs',
 		value: session.encriptedId,
@@ -538,12 +480,20 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 	}
 }
 
+const logger = (params: PLoggerLogParams, method?: (params: PLoggerLogParams) => void, request?: PRequest) => {
+	const tags = [...(params.tags ?? [])]
+	if (request) tags.push(request.ip, request.pathUrl)
+	method?.({
+		...params,
+		tags
+	})
+}
+
 export class PWebServer {
 	config: Readonly<PWebServerParams>
 	private oldFilesDeleterInterval?: ReturnType<typeof setInterval>
 	public sessions: PSessionCollection = {}
 	readonly paths: {
-		readonly logs: string
 		readonly routes: string
 		readonly sessions?: string
 		readonly uploads?: string
@@ -553,6 +503,20 @@ export class PWebServer {
 	private server?: http.Server
 	public webSocket?: socketIo.Server
 	private serverTls?: https.Server
+
+	get logger() {
+		return this.config.logger
+	}
+
+	get log() {
+		return {
+			info: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
+			warning: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.warning, request),
+			error: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
+			debug: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
+			system: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
+		}
+	}
 
 	constructor(config: PWebServerParams) {
 		/* Valida los parámetros de la configuración */
@@ -589,7 +553,6 @@ export class PWebServer {
 
 		this.config = config
 		this.paths = {
-			logs: config.paths.logs,
 			routes: config.paths.routes,
 			sessions: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
 			uploads: config.paths.uploads,
@@ -732,14 +695,5 @@ export class PWebServer {
 		this.serverTls?.close(() => {
 			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTP detenido` })
 		})
-	}
-
-	logger = {
-		info: (params: PWebServerLoggerParams) => logger('info', this.config, params),
-		success: (params: PWebServerLoggerParams) => logger('success', this.config, params),
-		debug: (params: PWebServerLoggerParams) => logger('debug', this.config, params),
-		error: (params: PWebServerLoggerParams) => logger('error', this.config, params),
-		system: (params: PWebServerLoggerParams) => logger('system', this.config, params),
-		warning: (params: PWebServerLoggerParams) => logger('warning', this.config, params),
 	}
 }
