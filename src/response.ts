@@ -13,12 +13,29 @@ export const PStatusCollection = {
 	InternalServerError: 500,
 }
 
+export type PFileInfoContent = string | Buffer | ArrayBuffer | stream.Readable
+
+export type PFileInfoParams = {
+	contentType?: string
+	contentLength?: number
+	forceDownload?: boolean
+} & ({
+	fileName?: string
+	filePath: string
+} | {
+	fileName: string
+	content: PFileInfoContent
+})
+
 export class PFileInfo {
 	fileName: string
 	filePath?: string
-	content?: string
+	content?: PFileInfoContent
+	contentType?: string
+	contentLength?: number
+	forceDownload?: boolean
 
-	constructor(params: ({ fileName?: string, filePath: string } | { fileName: string, content: string })) {
+	constructor(params: PFileInfoParams) {
 		if ('filePath' in params) {
 			this.filePath = params.filePath
 			if (params.fileName) {
@@ -31,29 +48,16 @@ export class PFileInfo {
 			this.fileName = params.fileName
 			this.content = params.content
 		}
-	}
-}
-
-export class PFileStream {
-	stream: stream.Readable
-	fileName: string
-	contentType?: string
-	contentLength?: number
-	forceDownload?: boolean
-
-	constructor(params: { stream: stream.Readable, fileName: string, contentType?: string, contentLength?: number, forceDownload?: boolean }) {
-		this.stream = params.stream
-		this.fileName = params.fileName
 		this.contentType = params.contentType
 		this.contentLength = params.contentLength
 		this.forceDownload = params.forceDownload
 	}
 }
 
-export type ResponseBody = string | number | boolean | object | PFileInfo | PFileStream | stream.Readable
+export type PResponseBody = string | number | boolean | object | PFileInfo | stream.Readable
 
 export type PResponseParams = {
-	body?: ResponseBody
+	body?: PResponseBody
 	status?: number
 	statusText?: string
 	headers?: { [key: string]: string }
@@ -95,22 +99,22 @@ export class PResponse {
 					this.body = fs.createReadStream(params.body.filePath)
 					this.headers['Content-Type'] = mimeTypes.lookup(params.body.fileName ?? params.body.filePath) || 'application/octet-stream'
 				} else {
-					this.body = params.body.content
-					this.headers['Content-Type'] = mimeTypes.contentType(params.body.content) || 'application/text'
+					const content = params.body.content
+					this.body = content instanceof ArrayBuffer ? Buffer.from(content) : content
+					if (!params.body.contentType) this.headers['Content-Type'] = typeof content == 'string' ? (mimeTypes.contentType(content) || 'application/text') : 'application/octet-stream'
 				}
+
+				const contentDisposition: string[] = [params.body.forceDownload ? 'attachment' : 'inline']
+				if (params.body?.fileName) contentDisposition.push(`filename="${encodeURIComponent(params.body.fileName)}"`)
+				this.headers['Content-disposition'] = contentDisposition.join('; ')
+
+				if (params.body.contentLength) this.headers['content-length'] = params.body.contentLength.toString()
 
 				const fileName = encodeURIComponent(params.body.fileName)
 				/* Asigna las cabeceras */
 				this.headers['Content-disposition'] = `inline; ${fileName ? `filename="${fileName}"` : ''}`
 				if (fileName) this.headers['file-name'] = fileName
-			} else if (params.body instanceof PFileStream) {
-				this.headers['Content-Type'] = params.body.contentType ?? (mimeTypes.lookup(params.body.fileName) || 'application/octet-stream')
-				const contentDisposition: string[] = [params.body.forceDownload ? 'attachment' : 'inline']
-				if (params.body?.fileName) contentDisposition.push(`filename="${encodeURIComponent(params.body.fileName)}"`)
-				this.headers['Content-disposition'] = contentDisposition.join('; ')
-				if (params.body.contentLength) this.headers['content-length'] = params.body.contentLength.toString()
-				this.body = params.body.stream
-			} else if ((typeof params.body == 'object' && params.body instanceof stream.Readable) || params.body instanceof Buffer) {
+			} else if (PUtils.ReadableStream.isReadableSream(params.body) || Buffer.isBuffer(params.body)) {
 				this.body = params.body
 			} else if (typeof params.body == 'number') {
 				this.headers['Content-Type'] = 'text/plain'

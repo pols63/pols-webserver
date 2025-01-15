@@ -1,7 +1,7 @@
 import { PSession, PSessionCollection, PSessionBody, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
 import { PUtils, PLogger } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
-import { PResponse, PFileInfo, ResponseBody } from './response'
+import { PResponse, PFileInfo, PResponseBody } from './response'
 import { PRequest } from './request'
 import express from 'express'
 import bodyParser from 'body-parser'
@@ -67,6 +67,7 @@ export type PWebServerParams = {
 	sessions: {
 		minutesExpiration: number
 		sameSiteCookie?: 'strict' | 'lax' | 'none'
+		secretKey: string
 	} & ({
 		storeMethod: PSessionStoreMethod.files
 		path: string
@@ -198,7 +199,8 @@ const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Soc
 		sessions: webServer.sessions,
 		storeMethod: config.sessions.storeMethod,
 		pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
-		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined
+		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
+		secretKey: config.sessions.secretKey
 	})
 	webServer.config.instances.webSocket.connectionEvent?.(clientSocket, session)
 	if (events) {
@@ -266,7 +268,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		sessions: webServer.sessions,
 		storeMethod: config.sessions.storeMethod,
 		pretty: 'pretty' in config.sessions ? config.sessions.pretty : null,
-		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined
+		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
+		secretKey: config.sessions.secretKey
 	})
 	await session.start()
 
@@ -486,7 +489,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			return result
 		} else {
 			return new PResponse({
-				body: result as ResponseBody,
+				body: result as PResponseBody,
 				status: 200
 			})
 		}
@@ -495,9 +498,9 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 	webServer.logger.system({ label: 'RESPONSE >>>', request })
 	response.cookies.push({
 		name: 'hs',
-		value: session.id,
+		value: session.encriptedId,
 		httpOnly: true,
-		sameSite: config.sessions?.sameSiteCookie
+		sameSite: config.sessions?.sameSiteCookie,
 	})
 	return response
 }

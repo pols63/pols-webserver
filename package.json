@@ -16,6 +16,7 @@
 		"@types/body-parser": "^1.19.5",
 		"@types/express": "^5.0.0",
 		"@types/express-fileupload": "^1.5.1",
+		"@types/jsonwebtoken": "^9.0.7",
 		"@types/mime-types": "^2.1.4",
 		"@types/node": "^22.7.9",
 		"eslint": "^9.13.0",
@@ -27,7 +28,8 @@
 	"dependencies": {
 		"express": "^4.21.1",
 		"express-fileupload": "^1.5.1",
-		"pols-utils": "^1.1.5",
+		"jsonwebtoken": "^9.0.2",
+		"pols-utils": "^1.2.2",
 		"pols-validator": "^1.0.1",
 		"socket.io": "^4.8.1"
 	}

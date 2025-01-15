@@ -1,5 +1,5 @@
 import { PWebServer } from '../src/index'
-import { StoreMethod } from '../src/session'
+import { PSessionStoreMethod } from '../src/session'
 import path from 'path'
 
 const server = new PWebServer({
@@ -14,9 +14,10 @@ const server = new PWebServer({
 	},
 	sessions: {
 		minutesExpiration: 15,
-		storeMethod: StoreMethod.files,
+		storeMethod: PSessionStoreMethod.files,
 		path: path.join(__dirname, './sessions'),
 		pretty: true,
+		secretKey: 'hola'
 	}
 })
 server.start()

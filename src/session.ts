@@ -2,6 +2,7 @@ import { PUtils } from 'pols-utils'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
+import * as jsonwebtoken from 'jsonwebtoken'
 
 export enum PSessionStoreMethod {
 	files = 'files',
@@ -35,6 +36,7 @@ export type PSessionParams = {
 	userAgent: string
 	minutesExpiration: number
 	sessions: PSessionCollection
+	secretKey: string
 } & ({
 	storeMethod: PSessionStoreMethod.memory
 } | {
@@ -101,9 +103,15 @@ export class PSession {
 	private storePath?: string
 	private pretty?: boolean
 	private minutesExpiration: number
+	private _encriptedId: string
+	private secretKey: string
 
 	public get id() {
 		return this._id
+	}
+
+	public get encriptedId() {
+		return this._encriptedId
 	}
 
 	public get lastCheck() {
@@ -112,7 +120,6 @@ export class PSession {
 
 	constructor(params: PSessionParams) {
 		/* Obtiene el ID de la sesión */
-		this._id = params.hs ?? ''
 		this.hostname = params.hostname
 		this.userAgent = params.userAgent
 		this.ip = params.ip
@@ -125,6 +132,8 @@ export class PSession {
 				break
 		}
 		this.minutesExpiration = params.minutesExpiration
+		this._encriptedId = params.hs
+		this.secretKey = params.secretKey
 	}
 
 	private checkPath() {
@@ -161,12 +170,20 @@ export class PSession {
 		this.checkPath()
 
 		/* Se comprueba la identidad del ID */
-		if (
-			!this._id
-			|| !this._id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-		) {
-			/* Si ya venía de parte del cliente un ID, pero ésta no existe en memoria, se regenera por seguridad */
+		if (!this._encriptedId) {
 			await this.generateID()
+		} else {
+			let decodedToken: jsonwebtoken.JwtPayload
+			try {
+				decodedToken = jsonwebtoken.verify(this._encriptedId, this.secretKey) as jsonwebtoken.JwtPayload
+			} catch {
+				await this.generateID()
+			}
+			if ('id' in decodedToken && decodedToken.id.match?.(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+				this._id = decodedToken.id
+			} else {
+				await this.generateID()
+			}
 		}
 
 		const now = new Date
@@ -192,9 +209,11 @@ export class PSession {
 							if (!await this.checkValidBody(now, expirationTime)) continue
 						} catch {
 							fs.unlinkSync(bodyFilePath)
+							this.generateID()
 							this.body = newBody
 						}
 					} else {
+						this.generateID()
 						this.body = newBody
 					}
 					this.save()
@@ -205,6 +224,7 @@ export class PSession {
 						this.body = this.sessions[this._id]
 						if (!await this.checkValidBody(now, expirationTime)) continue
 					} else {
+						this.generateID()
 						this.body = newBody
 					}
 					this.save()
@@ -215,10 +235,12 @@ export class PSession {
 						if (this.body) {
 							if (!await this.checkValidBody(now, expirationTime)) continue
 						} else {
+							this.generateID()
 							this.body = newBody
 						}
 					} catch {
 						await this.storeMethod.destroyBody(this._id)
+						this.generateID()
 						this.body = newBody
 					}
 					await this.storeMethod.saveBody(this._id, this.body)
@@ -226,6 +248,8 @@ export class PSession {
 				}
 			}
 		}
+
+		this._encriptedId = jsonwebtoken.sign({id: this._id}, this.secretKey)
 	}
 
 	async generateID() {
