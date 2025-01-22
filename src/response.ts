@@ -101,7 +101,13 @@ export class PResponse {
 				} else {
 					const content = params.body.content
 					this.body = content instanceof ArrayBuffer ? Buffer.from(content) : content
-					if (!params.body.contentType) this.headers['Content-Type'] = typeof content == 'string' ? (mimeTypes.contentType(content) || 'application/text') : 'application/octet-stream'
+					if (!params.body.contentType) {
+						if (typeof content == 'string') {
+							this.headers['Content-Type'] = mimeTypes.contentType(content) || 'application/text'
+						} else {
+							this.headers['Content-Type'] = mimeTypes.lookup(params.body.fileName ?? params.body.filePath) || 'application/octet-stream'
+						}
+					}
 				}
 
 				const contentDisposition: string[] = [params.body.forceDownload ? 'attachment' : 'inline']
