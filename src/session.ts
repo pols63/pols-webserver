@@ -176,12 +176,12 @@ export class PSession {
 			let decodedToken: jsonwebtoken.JwtPayload
 			try {
 				decodedToken = jsonwebtoken.verify(this._encriptedId, this.secretKey) as jsonwebtoken.JwtPayload
+				if ('id' in decodedToken && decodedToken.id.match?.(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
+					this._id = decodedToken.id
+				} else {
+					await this.generateID()
+				}
 			} catch {
-				await this.generateID()
-			}
-			if ('id' in decodedToken && decodedToken.id.match?.(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
-				this._id = decodedToken.id
-			} else {
 				await this.generateID()
 			}
 		}
