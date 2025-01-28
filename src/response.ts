@@ -113,13 +113,7 @@ export class PResponse {
 				const contentDisposition: string[] = [params.body.forceDownload ? 'attachment' : 'inline']
 				if (params.body?.fileName) contentDisposition.push(`filename="${encodeURIComponent(params.body.fileName)}"`)
 				this.headers['Content-disposition'] = contentDisposition.join('; ')
-
 				if (params.body.contentLength) this.headers['content-length'] = params.body.contentLength.toString()
-
-				const fileName = encodeURIComponent(params.body.fileName)
-				/* Asigna las cabeceras */
-				this.headers['Content-disposition'] = `inline; ${fileName ? `filename="${fileName}"` : ''}`
-				if (fileName) this.headers['file-name'] = fileName
 			} else if (PUtils.ReadableStream.isReadableSream(params.body) || Buffer.isBuffer(params.body)) {
 				this.body = params.body
 			} else if (typeof params.body == 'number') {
