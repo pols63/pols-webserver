@@ -107,6 +107,8 @@ export class PResponse {
 						} else {
 							this.headers['Content-Type'] = mimeTypes.lookup(params.body.fileName ?? params.body.filePath) || 'application/octet-stream'
 						}
+					} else {
+						this.headers['Content-Type'] = params.body.contentType
 					}
 				}
 
