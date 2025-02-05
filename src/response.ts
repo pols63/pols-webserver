@@ -3,16 +3,6 @@ import mimeTypes from 'mime-types'
 import { PUtils } from 'pols-utils'
 import stream from 'stream'
 
-export const PStatusCollection = {
-	Ok: 200,
-	Found: 302,
-	Forbidden: 403,
-	NotFound: 404,
-	UnprocessableContent: 422,
-	ServiceUnavailable: 503,
-	InternalServerError: 500,
-}
-
 export type PFileInfoContent = string | Buffer | ArrayBuffer | stream.Readable
 
 export type PFileInfoParams = {
