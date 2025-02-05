@@ -249,7 +249,7 @@ export class PSession {
 			}
 		}
 
-		this._encriptedId = jsonwebtoken.sign({id: this._id}, this.secretKey)
+		this._encriptedId = jsonwebtoken.sign({ id: this._id }, this.secretKey)
 	}
 
 	async generateID() {
@@ -285,7 +285,7 @@ export class PSession {
 		switch (this.storeMethod) {
 			case PSessionStoreMethod.files: {
 				const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-				fs.writeFileSync(bodyFilePath, PUtils.JSON.stringify(this.body, this.pretty ? '\t' : undefined), { encoding: 'utf-8' })
+				fs.writeFileSync(bodyFilePath, PUtils.JSON.stringify(this.body, { space: this.pretty ? '\t' : undefined }), { encoding: 'utf-8' })
 				break
 			}
 			case PSessionStoreMethod.memory:
