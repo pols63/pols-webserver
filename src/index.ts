@@ -14,6 +14,7 @@ import socketIo from 'socket.io'
 import { PLoggerLogParams, PLoggerParams } from 'pols-utils/dist/plogger'
 
 export { PQuickResponse } from './quickResponse'
+export { PResponse, PRequest }
 
 export type PWebServerEvents = {
 	requestReceived?(request: PRequest, session: PSession): Promise<PResponse | void>
