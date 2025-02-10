@@ -1,4 +1,4 @@
-import { PSession, PSessionCollection, PSessionBody, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
+import { PSession, PSessionCollection, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
 import { PUtils, PLogger } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, PResponseBody } from './response'
@@ -13,6 +13,8 @@ import path from 'path'
 import socketIo from 'socket.io'
 import { PLoggerLogParams, PLoggerParams } from 'pols-utils/dist/plogger'
 
+export { PQuickResponse } from './quickResponse'
+
 export type PWebServerEvents = {
 	requestReceived?(request: PRequest, session: PSession): Promise<PResponse | void>
 	notFound?(type: 'script' | 'function', request: PRequest, session: PSession): Promise<PResponse | void>
@@ -20,8 +22,6 @@ export type PWebServerEvents = {
 }
 
 export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: PSession, data: unknown[] }) => void>
-
-type LoggerType = 'info' | 'success' | 'warning' | 'error' | 'debug' | 'system'
 
 export type PWebServerLoggerParams = Omit<PLoggerParams, 'logPath' | 'showInConsole'> & {
 	request?: PRequest
