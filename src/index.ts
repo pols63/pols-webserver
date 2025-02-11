@@ -291,7 +291,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 					if (part == null) part = 'index'
 					continue
 				} else {
-					return await notFound(this, 'script', pathToRoute, '', request, session)
+					return await notFound(webServer, 'script', pathToRoute, '', request, session)
 				}
 			} else {
 				/* Si el elemento no existe, se evalúa si existe como archivo aagregándole las extensiones correspondientes */
@@ -315,7 +315,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 						part = 'index'
 						continue
 					} else {
-						return await notFound(this, 'script', pathToRoute, '', request, session)
+						return await notFound(webServer, 'script', pathToRoute, '', request, session)
 					}
 				}
 			}
@@ -347,7 +347,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				/* Si no se ha encontrado la función indicada en la URL, se buscará la función $index, de existir, se invocará automáticamente a ésta, dejando a 'part' con el rol de parámetro */
 				functionName = '$index'
 			} else {
-				return await notFound(this, 'function', pathToRoute, functionName, request, session)
+				return await notFound(webServer, 'function', pathToRoute, functionName, request, session)
 			}
 		}
 
