@@ -321,7 +321,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			}
 
 			try {
-				const routeClass = await loadRouteClass(this, pathToRoute)
+				const routeClass = await loadRouteClass(webServer, pathToRoute)
 				routeObject = new routeClass(this, request, session)
 			} catch (err) {
 				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
