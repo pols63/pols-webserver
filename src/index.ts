@@ -473,10 +473,10 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 	}
 }
 
-const logger = (params: PLoggerLogParams, method?: (params: PLoggerLogParams) => void, request?: PRequest) => {
+const logger = (params: PLoggerLogParams, pLogger?: PLogger, methodName?: string, request?: PRequest) => {
 	const tags = [...(params.tags ?? [])]
 	if (request) tags.push(request.ip, request.pathUrl)
-	method?.({
+	pLogger?.[methodName]?.({
 		...params,
 		tags
 	})
@@ -507,11 +507,11 @@ export class PWebServer {
 
 	get log() {
 		return {
-			info: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
-			warning: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.warning, request),
-			error: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
-			debug: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
-			system: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger?.info, request),
+			info: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
+			warning: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'warning', request),
+			error: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
+			debug: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
+			system: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
 		}
 	}
 
