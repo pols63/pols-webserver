@@ -3,6 +3,8 @@ import mimeTypes from 'mime-types'
 import { PUtils } from 'pols-utils'
 import stream from 'stream'
 
+export { PQuickResponse } from './quickResponse'
+
 export type PFileInfoContent = string | Buffer | ArrayBuffer | stream.Readable
 
 export type PFileInfoParams = {

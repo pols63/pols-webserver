@@ -16,6 +16,18 @@
 		".": {
 			"import": "./dist/index.js",
 			"require": "./dist/index.js"
+		},
+		"./session": {
+			"import": "./dist/session.js",
+			"require": "./dist/session.js"
+		},
+		"./request": {
+			"import": "./dist/request.js",
+			"require": "./dist/request.js"
+		},
+		"./response": {
+			"import": "./dist/response.js",
+			"require": "./dist/response.js"
 		}
 	},
 	"devDependencies": {

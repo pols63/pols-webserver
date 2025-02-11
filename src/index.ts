@@ -16,12 +16,6 @@ import { PLoggerLogParams, PLoggerParams } from 'pols-utils/dist/plogger'
 export { PQuickResponse } from './quickResponse'
 export { PResponse, PRequest }
 
-export type PWebServerEvents = {
-	requestReceived?(request: PRequest, session: PSession): Promise<PResponse | void>
-	notFound?(type: 'script' | 'function', request: PRequest, session: PSession): Promise<PResponse | void>
-	beforeExecute?(route: PRoute, request: PRequest, session: PSession): Promise<PResponse | void>
-}
-
 export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: PSession, data: unknown[] }) => void>
 
 export type PWebServerLoggerParams = Omit<PLoggerParams, 'logPath' | 'showInConsole'> & {
@@ -46,7 +40,6 @@ export type PWebServerParams = {
 	}
 	showErrorsOnClient?: boolean
 	defaultRoute?: string
-	events?: PWebServerEvents,
 	oldFilesInUploadsFolder?: {
 		minutesExpiration: number
 	}
@@ -86,14 +79,13 @@ export class PRoute {
 	readonly session: PSession
 	whiteList: string[] = []
 	blackList: string[] = []
+	declare finally: () => Promise<void>
 
 	constructor(server: PWebServer, request: PRequest, session: PSession) {
 		this.server = server
 		this.request = request
 		this.session = session
 	}
-
-	async finally() { }
 }
 
 /* Send body */
@@ -180,7 +172,7 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 	})
 	let notFoundEventResponse: PResponse
 	try {
-		notFoundEventResponse = await config.events?.notFound?.('script', request, session) as PResponse
+		notFoundEventResponse = await webServer.onNotFound?.({ type: 'script', request, session }) as PResponse
 		if (!notFoundEventResponse) {
 			if (type == 'script') {
 				webServer.log.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'` }, request)
@@ -225,10 +217,10 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 	webServer.log.system({ label: '>>> REQUEST' }, request)
 
 	/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
-	if (config.events?.requestReceived) {
+	if (webServer.onRequestReceived) {
 		let response: PResponse | void
 		try {
-			response = await config.events.requestReceived(request, session)
+			response = await webServer.onRequestReceived({ request, session })
 		} catch (err) {
 			const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
 			webServer.log.error({ label: 'EVENTS', description: message, body: err }, request)
@@ -392,7 +384,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 
 		/* Ejecuta el evento antes de llamar a la función */
 		try {
-			const response = await config.events?.beforeExecute?.(routeObject, request, session)
+			const response = await webServer.onBeforeExecute?.({ route: routeObject, request, session })
 			if (response) return response
 		} catch (err) {
 			const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
@@ -416,7 +408,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		} finally {
 			/* Ejecuta el método finally de la ruta */
 			try {
-				await routeObject.finally()
+				await routeObject.finally?.()
 			} catch (err) {
 				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
 				webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
@@ -504,6 +496,10 @@ export class PWebServer {
 	private server?: http.Server
 	public webSocket?: socketIo.Server
 	private serverTls?: https.Server
+
+	declare onRequestReceived: ({ request, session }: { request: PRequest, session: PSession }) => Promise<PResponse | void>
+	declare onNotFound: ({ type, request, session }: { type: 'script' | 'function', request: PRequest, session: PSession }) => Promise<PResponse | void>
+	declare onBeforeExecute: ({ route, request, session }: { route: PRoute, request: PRequest, session: PSession }) => Promise<PResponse | void>
 
 	get logger() {
 		return this.config.logger
