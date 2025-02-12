@@ -285,7 +285,7 @@ export class PSession {
 		switch (this.storeMethod) {
 			case PSessionStoreMethod.files: {
 				const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-				fs.writeFileSync(bodyFilePath, PUtils.JSON.stringify(this.body, { space: this.pretty ? '\t' : undefined }), { encoding: 'utf-8' })
+				fs.writeFileSync(bodyFilePath, JSON.stringify(this.body, null, this.pretty ? '\t' : undefined))
 				break
 			}
 			case PSessionStoreMethod.memory:

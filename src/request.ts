@@ -1,17 +1,17 @@
 import express from 'express'
 import { PUtils } from 'pols-utils'
-import { URecord } from 'pols-utils/dist/types'
+import { PRecord } from 'pols-utils/constants'
 
 export class PRequest {
 	readonly protocol: string
 	readonly hostname: string
 	readonly pathUrl: string
 	readonly queryUrl: string
-	readonly query: URecord
+	readonly query: PRecord
 	readonly ip: string
 	readonly headers: Record<string, string>
 	readonly cookies?: Record<string, string>
-	readonly body?: URecord
+	readonly body?: PRecord
 	readonly method: string
 	readonly targetHost: string
 	readonly files?: {

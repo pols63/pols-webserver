@@ -115,7 +115,7 @@ export class PResponse {
 				this.body = params.body.toString()
 			} else if ((params.body !== undefined && typeof params.body != 'string') || (typeof params.body == 'boolean') || (typeof params.body == 'object')) {
 				this.headers['Content-Type'] = 'application/json'
-				this.body = PUtils.JSON.stringify(params.body)
+				this.body = JSON.stringify(params.body)
 			} else {
 				this.headers['Content-Type'] = 'text/plain'
 				this.body = params.body ?? ''

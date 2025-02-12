@@ -48,7 +48,9 @@
 		"express": "^4.21.1",
 		"express-fileupload": "^1.5.1",
 		"jsonwebtoken": "^9.0.2",
-		"pols-utils": "^1.6.5",
+		"pols-date": "^1.0.1",
+		"pols-logger": "^1.0.0",
+		"pols-utils": "^4.1.0",
 		"pols-validator": "^1.0.1",
 		"socket.io": "^4.8.1"
 	}

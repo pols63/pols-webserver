@@ -1,5 +1,5 @@
 import { PSession, PSessionCollection, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
-import { PUtils, PLogger } from 'pols-utils'
+import { PUtils } from 'pols-utils'
 import { validate, rules } from 'pols-validator'
 import { PResponse, PFileInfo, PResponseBody } from './response'
 import { PRequest } from './request'
@@ -11,7 +11,7 @@ import http from 'http'
 import fs from 'fs'
 import path from 'path'
 import socketIo from 'socket.io'
-import { PLoggerLogParams, PLoggerParams } from 'pols-utils/dist/plogger'
+import { PLogger, PLoggerLogParams, PLoggerParams } from 'pols-logger'
 
 export { PQuickResponse } from './quickResponse'
 export { PResponse, PRequest }
