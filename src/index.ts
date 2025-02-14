@@ -408,7 +408,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		} finally {
 			/* Ejecuta el método finally de la ruta */
 			try {
-				await routeObject.finally?.()
+				await routeObject.onFinally?.()
 			} catch (err) {
 				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
 				webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
