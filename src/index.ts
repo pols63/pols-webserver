@@ -79,7 +79,7 @@ export class PRoute {
 	readonly session: PSession
 	whiteList: string[] = []
 	blackList: string[] = []
-	finally?(): Promise<void>
+	onFinally?(): Promise<void>
 
 	constructor(server: PWebServer, request: PRequest, session: PSession) {
 		this.server = server
