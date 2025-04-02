@@ -1,6 +1,5 @@
 import express from 'express'
-import { PUtils } from 'pols-utils'
-import { PRecord } from 'pols-utils/constants'
+import { PRecord, PUtilsObject } from 'pols-utils'
 
 export class PRequest {
 	readonly protocol: string
@@ -30,7 +29,7 @@ export class PRequest {
 		this.hostname = req.hostname
 		this.pathUrl = req.path?.replace(/^\//, '') ?? ''
 		this.query = (req.query as any) ?? {}
-		this.queryUrl = PUtils.Object.objectToUrlParameters(this.query)
+		this.queryUrl = PUtilsObject.toUrlParameters(this.query)
 		this.ip = req.ip
 		this.headers = {}
 		for (const key in req.headers) {

@@ -1,6 +1,5 @@
 import { PSession, PSessionCollection, PSessionStoreMethod, PSessionStoreFunctions, clearOldSessions } from './session'
-import { PUtils } from 'pols-utils'
-import { validate, rules } from 'pols-validator'
+import { rules } from 'pols-validator'
 import { PResponse, PFileInfo, PResponseBody } from './response'
 import { PRequest } from './request'
 import express from 'express'
@@ -12,6 +11,7 @@ import fs from 'fs'
 import path from 'path'
 import socketIo from 'socket.io'
 import { PLogger, PLoggerLogParams, PLoggerParams } from 'pols-logger'
+import { PUtilsFS } from 'pols-utils'
 
 export { PQuickResponse } from './quickResponse'
 export { PResponse, PRequest }
@@ -256,7 +256,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				pathUrlCopy = request.pathUrl.replace(new RegExp('^' + config.public.urlPath), '')
 			}
 			const publicFilePath = path.join(config.public.path, pathUrlCopy)
-			if (PUtils.Files.existsFile(publicFilePath)) {
+			if (PUtilsFS.existsFile(publicFilePath)) {
 				return new PResponse({
 					body: new PFileInfo({ filePath: publicFilePath }),
 					status: 200
@@ -452,7 +452,7 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 	})
 
 	/* Elimina archivos subidos antiguos */
-	if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtils.Files.existsDirectory(webServer.paths.uploads)) {
+	if (config.oldFilesInUploadsFolder?.minutesExpiration && PUtilsFS.existsDirectory(webServer.paths.uploads)) {
 		const files = fs.readdirSync(webServer.paths.uploads)
 		const expirationTime = new Date
 		expirationTime.setMinutes(expirationTime.getMinutes() - config.oldFilesInUploadsFolder.minutesExpiration)
@@ -517,14 +517,14 @@ export class PWebServer {
 
 	constructor(config: PWebServerParams) {
 		/* Valida los parámetros de la configuración */
-		const v = validate<PWebServerParams>(config, rules({ required: true }).isObject({
+		const v = rules({ label: 'config', required: true }).isObject({
 			paths: rules({ required: true }).isObject({
 				logs: rules({ default: './' }).isAlphanumeric(),
 				routes: rules({ required: true }).isAlphanumeric(),
 				uploads: rules({ default: './' }).isAlphanumeric()
-			}, 'paths >'),
+			}),
 			sizeRequest: rules({ default: 50 }).isNumber().gt(0)
-		}))
+		}).validate<PWebServerParams>(config)
 		if (v.error == true) throw new Error(v.messages[0])
 		config.paths = v.result.paths
 

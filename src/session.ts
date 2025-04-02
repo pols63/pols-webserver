@@ -1,8 +1,8 @@
-import { PUtils } from 'pols-utils'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as crypto from 'crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
+import { PUtilsFS } from 'pols-utils'
 
 export enum PSessionStoreMethod {
 	files = 'files',
@@ -59,7 +59,7 @@ export const clearOldSessions = async ({ storeMethod, minutesExpiration, storePa
 	switch (storeMethod) {
 		case PSessionStoreMethod.files: {
 			if (!storePath) throw new Error(`'storePath' es requerido`)
-			if (!PUtils.Files.existsDirectory(storePath)) break
+			if (!PUtilsFS.existsDirectory(storePath)) break
 			const files = fs.readdirSync(storePath)
 			for (const file of files) {
 				if (['.', '..'].includes(file)) continue
@@ -139,7 +139,7 @@ export class PSession {
 	private checkPath() {
 		/* Valida la existencia del directorio de sesiones e intenta crearlo si es necesario */
 		if (this.storeMethod == PSessionStoreMethod.files) {
-			if (!PUtils.Files.existsDirectory(this.storePath)) {
+			if (!PUtilsFS.existsDirectory(this.storePath)) {
 				try {
 					fs.mkdirSync(this.storePath)
 				} catch (err) {
@@ -203,7 +203,7 @@ export class PSession {
 			switch (this.storeMethod) {
 				case PSessionStoreMethod.files: {
 					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-					if (PUtils.Files.existsFile(bodyFilePath)) {
+					if (PUtilsFS.existsFile(bodyFilePath)) {
 						try {
 							this.body = JSON.parse(fs.readFileSync(bodyFilePath, { encoding: 'utf-8' }))
 							if (!await this.checkValidBody(now, expirationTime)) continue
@@ -259,7 +259,7 @@ export class PSession {
 			switch (this.storeMethod) {
 				case PSessionStoreMethod.files: {
 					const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-					if (!PUtils.Files.existsFile(bodyFilePath)) generated = true
+					if (!PUtilsFS.existsFile(bodyFilePath)) generated = true
 					break
 				}
 				case PSessionStoreMethod.memory: {
@@ -301,7 +301,7 @@ export class PSession {
 		switch (this.storeMethod) {
 			case PSessionStoreMethod.files: {
 				const bodyFilePath = path.join(this.storePath, `${this._id}.json`)
-				if (PUtils.Files.existsFile(bodyFilePath)) fs.unlinkSync(bodyFilePath)
+				if (PUtilsFS.existsFile(bodyFilePath)) fs.unlinkSync(bodyFilePath)
 				break
 			}
 			case PSessionStoreMethod.memory: {
