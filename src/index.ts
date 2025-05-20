@@ -523,7 +523,7 @@ export class PWebServer {
 				routes: rules({ required: true }).isAlphanumeric(),
 				uploads: rules({ default: './' }).isAlphanumeric()
 			}),
-			sizeRequest: rules({ default: 50 }).isNumber().gt(0)
+			sizeRequest: rules({ default: 50 }).isNumber().isGt(0)
 		}).validate<PWebServerParams>(config)
 		if (v.error == true) throw new Error(v.messages[0])
 		config.paths = v.result.paths
