@@ -387,7 +387,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			const response = await webServer.onBeforeExecute?.({ route: routeObject, request, session })
 			if (response) return response
 		} catch (err) {
-			const subtitle = `Ocurrió un error en la ejecución del evento 'beforeExecute'`
+			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'beforeExecute'`
 			webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
 			return new PResponse({
 				body: subtitle,
@@ -417,6 +417,19 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 					status: 500
 				})
 			}
+		}
+
+		/* Evento antes de dar respuesta */
+		try {
+			const result2 = await webServer.onBeforeResponse?.({ route: routeObject, request, session, callbackResult: result })
+			if (result2) result = result2
+		} catch (err) {
+			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'onBeforeResponse'`
+			webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
+			result = new PResponse({
+				body: subtitle,
+				status: 500
+			})
 		}
 
 		/* Devuelve la respuesta de la función */
@@ -500,6 +513,7 @@ export class PWebServer {
 	declare onRequestReceived: ({ request, session }: { request: PRequest, session: PSession }) => Promise<PResponse | void>
 	declare onNotFound: ({ type, request, session }: { type: 'script' | 'function', request: PRequest, session: PSession }) => Promise<PResponse | void>
 	declare onBeforeExecute: ({ route, request, session }: { route: PRoute, request: PRequest, session: PSession }) => Promise<PResponse | void>
+	declare onBeforeResponse: ({ route, request, session }: { route: PRoute, request: PRequest, session: PSession, callbackResult: unknown }) => Promise<PResponse | void>
 
 	get logger() {
 		return this.config.logger

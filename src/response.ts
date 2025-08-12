@@ -46,7 +46,7 @@ export class PFileInfo {
 	}
 }
 
-export type PResponseBody = string | number | boolean | object | PFileInfo | stream.Readable
+export type PResponseBody = string | number | boolean | object | PFileInfo | PResponse | stream.Readable
 
 export type PResponseParams = {
 	body?: PResponseBody
