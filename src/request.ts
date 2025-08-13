@@ -13,6 +13,7 @@ export class PRequest {
 	readonly body?: PRecord
 	readonly method: string
 	readonly targetHost: string
+	readonly referrer: string
 	readonly files?: {
 		[fieldName: string]: {
 			fileName: string
@@ -27,6 +28,7 @@ export class PRequest {
 	constructor(req: express.Request) {
 		this.protocol = req.protocol
 		this.hostname = req.hostname
+		this.referrer = req.get('Referer')
 		this.pathUrl = req.path?.replace(/^\//, '') ?? ''
 		this.query = (req.query as any) ?? {}
 		this.queryUrl = PUtilsObject.toUrlParameters(this.query)
