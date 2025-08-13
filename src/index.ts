@@ -704,7 +704,7 @@ export class PWebServer {
 			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTP detenido` })
 		})
 		this.serverTls?.close(() => {
-			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTP detenido` })
+			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTPS detenido` })
 		})
 	}
 }
