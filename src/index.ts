@@ -122,7 +122,7 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 }
 
 const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
-	webServer.logger.system({ label: 'WEB SOCKET', description: `Cliente conectado` })
+	webServer.logger.system({ description: `WebSocket: Cliente conectado` })
 	const config = webServer.config
 	const request = new PRequest(clientSocket.request as any)
 	const session = new PSession({
@@ -165,7 +165,6 @@ const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Pro
 }
 
 const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: PSession) => {
-	const config = webServer.config
 	const response = new PResponse({
 		body: `No se encontró la ruta`,
 		status: 404
@@ -175,14 +174,14 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 		notFoundEventResponse = await webServer.onNotFound?.({ type: 'script', request, session }) as PResponse
 		if (!notFoundEventResponse) {
 			if (type == 'script') {
-				webServer.log.error({ label: 'ERROR', description: `No se encontró la ruta '${pathToRoute}'` }, request)
+				webServer.logger.error({ description: `No se encontró la ruta '${pathToRoute}'` }, request)
 			} else {
-				webServer.log.error({ label: 'ERROR', description: `No se encontró la función '${functionName}' en '${pathToRoute}'` }, request)
+				webServer.logger.error({ description: `No se encontró la función '${functionName}' en '${pathToRoute}'` }, request)
 			}
 		}
 	} catch (err) {
 		const subtitle = `Error al ejecutar el evento 'notFound'`
-		webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
+		webServer.logger.error({ description: subtitle, body: err }, request)
 		notFoundEventResponse = new PResponse({
 			body: subtitle,
 			status: 500
@@ -214,7 +213,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
 	}
 
-	webServer.log.system({ label: '>>> REQUEST' }, request)
+	webServer.logger.system({ description: 'REQUEST recibido' }, request)
 
 	/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
 	if (webServer.onRequestReceived) {
@@ -222,8 +221,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		try {
 			response = await webServer.onRequestReceived({ request, session })
 		} catch (err) {
-			const message = `Ocurrió un error al ejecutar el evento 'requestReceived'`
-			webServer.log.error({ label: 'EVENTS', description: message, body: err }, request)
+			const message = `Ocurrió un error al ejecutar en el manejador del evento 'onRequestReceived'`
+			webServer.logger.error({ description: message, body: err }, request)
 			return new PResponse({
 				body: message,
 				status: 503
@@ -325,7 +324,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				routeObject = new routeClass(this, request, session)
 			} catch (err) {
 				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
-				webServer.log.error({ label: 'ERROR', description, body: err }, request)
+				webServer.logger.error({ description, body: err }, request)
 				return new PResponse({
 					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 					status: 500
@@ -388,7 +387,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			if (response) return response
 		} catch (err) {
 			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'beforeExecute'`
-			webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
+			webServer.logger.error({ description: subtitle, body: err }, request)
 			return new PResponse({
 				body: subtitle,
 				status: 500
@@ -400,7 +399,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			result = await toExecute.apply(routeObject, parameters)
 		} catch (err) {
 			const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
-			webServer.log.error({ label: 'ERROR', description, body: err }, request)
+			webServer.logger.error({ description, body: err }, request)
 			result = new PResponse({
 				body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
 				status: 500
@@ -411,7 +410,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				await routeObject.onFinally?.()
 			} catch (err) {
 				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
-				webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
+				webServer.logger.error({ description: subtitle, body: err }, request)
 				result = new PResponse({
 					body: subtitle,
 					status: 500
@@ -425,7 +424,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			if (result2) result = result2
 		} catch (err) {
 			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'onBeforeResponse'`
-			webServer.log.error({ label: 'ERROR', description: subtitle, body: err }, request)
+			webServer.logger.error({ description: subtitle, body: err }, request)
 			result = new PResponse({
 				body: subtitle,
 				status: 500
@@ -443,7 +442,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		}
 	})()
 
-	webServer.log.system({ label: 'RESPONSE >>>' }, request)
+	webServer.logger.system({ description: 'RESPONSE enviado' }, request)
 	response.cookies.push({
 		name: 'hs',
 		value: session.encriptedId,
@@ -477,9 +476,9 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 			if (stats.ctime < expirationTime && stats.size > 0) {
 				try {
 					fs.unlinkSync(filePath)
-					webServer.logger.info({ label: 'FILE DELETED', description: file })
+					webServer.logger.info({ description: `Archivo borrado: ${file}` })
 				} catch (err) {
-					webServer.logger.error({ label: 'ERROR', description: `Error al intentar borrar el archivo "${file}"`, body: err })
+					webServer.logger.error({ description: `Error al intentar borrar el archivo "${file}"`, body: err })
 				}
 			}
 		}
@@ -487,6 +486,7 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 }
 
 const logger = (params: PLoggerLogParams, pLogger?: PLogger, methodName?: string, request?: PRequest) => {
+	if (!pLogger) return
 	const tags = [...(params.tags ?? [])]
 	if (request) tags.push(request.ip, request.pathUrl)
 	pLogger?.[methodName]?.({
@@ -516,16 +516,12 @@ export class PWebServer {
 	declare onBeforeResponse: ({ route, request, session }: { route: PRoute, request: PRequest, session: PSession, callbackResult: unknown }) => Promise<PResponse | void>
 
 	get logger() {
-		return this.config.logger
-	}
-
-	get log() {
 		return {
-			info: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
-			warning: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'warning', request),
-			error: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
-			debug: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
-			system: (params: PLoggerLogParams, request: PRequest) => logger(params, this.logger, 'info', request),
+			info: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
+			warning: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'warning', request),
+			error: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
+			debug: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
+			system: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
 		}
 	}
 
@@ -610,7 +606,7 @@ export class PWebServer {
 				if (!fs.existsSync(config.paths.uploads)) fs.mkdirSync(config.paths.uploads)
 				next()
 			} catch (err) {
-				this.logger.error({ label: 'WEB SERVER', description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
+				this.logger.error({ description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
 				responseToClient(new PResponse({
 					body: 'Ocurrió un error al intentar crear la carpeta de recepción de archivos',
 					status: 500
@@ -647,7 +643,7 @@ export class PWebServer {
 			try {
 				response = await detectRoute(this, req)
 			} catch (error) {
-				this.logger.error({ label: 'ERROR', description: `Ocurrió un error en la ejecución del evento 'beforeExecute'`, body: error })
+				this.logger.error({ description: `Ocurrió un error en la ejecución del evento 'beforeExecute'`, body: error })
 				response = new PResponse({
 					body: 'Error en el servidor',
 					status: 500
@@ -684,13 +680,13 @@ export class PWebServer {
 
 		if (config.instances.http) {
 			this.server.listen(config.instances.http.port, () => {
-				this.logger.system({ label: 'WEB SERVER', description: `Escuchando en el puerto ${config.instances.http.port} con protocolo HTTP` })
+				this.logger.system({ description: `Escuchando en el puerto ${config.instances.http.port} con protocolo HTTP` })
 			})
 		}
 
 		if (config.instances.https) {
 			this.serverTls.listen(config.instances.https.port, () => {
-				this.logger.system({ label: 'WEB SERVER', description: `Escuchando en el puerto ${config.instances.https.port} con protocolo HTTPS` })
+				this.logger.system({ description: `Escuchando en el puerto ${config.instances.https.port} con protocolo HTTPS` })
 			})
 		}
 
@@ -701,10 +697,10 @@ export class PWebServer {
 	stop() {
 		clearInterval(this.oldFilesDeleterInterval)
 		this.server?.close(() => {
-			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTP detenido` })
+			this.logger.system({ description: `Servicio HTTP detenido` })
 		})
 		this.serverTls?.close(() => {
-			this.logger.system({ label: 'WEB SERVER', description: `Servicio HTTPS detenido` })
+			this.logger.system({ description: `Servicio HTTPS detenido` })
 		})
 	}
 }
