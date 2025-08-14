@@ -65,8 +65,9 @@ export type Cookie = {
 }
 
 export class PResponse {
-	originalBody?: unknown
 	body?: string | Buffer | stream.Readable
+	originalBody?: unknown
+	text?: string
 	status?: number
 	statusText?: string
 	headers: { [key: string]: string } = {}
@@ -119,6 +120,7 @@ export class PResponse {
 			} else {
 				this.headers['Content-Type'] = 'text/plain'
 				this.body = params.body ?? ''
+				this.text = params.body
 			}
 
 			if (params.headers) {
