@@ -95,11 +95,7 @@ export class PResponse {
 					const content = params.body.content
 					this.body = content instanceof ArrayBuffer ? Buffer.from(content) : content
 					if (!params.body.contentType) {
-						if (typeof content == 'string') {
-							this.headers['Content-Type'] = mimeTypes.contentType(content) || 'application/text'
-						} else {
-							this.headers['Content-Type'] = mimeTypes.lookup(params.body.fileName ?? params.body.filePath) || 'application/octet-stream'
-						}
+						this.headers['Content-Type'] = mimeTypes.lookup(params.body.fileName ?? params.body.filePath) || 'application/octet-stream'
 					} else {
 						this.headers['Content-Type'] = params.body.contentType
 					}
