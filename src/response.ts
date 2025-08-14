@@ -108,7 +108,7 @@ export class PResponse {
 				if (params.body?.fileName) contentDisposition.push(`filename="${encodeURIComponent(params.body.fileName)}"`)
 				this.headers['Content-disposition'] = contentDisposition.join('; ')
 				if (params.body.contentLength) this.headers['content-length'] = params.body.contentLength.toString()
-			} else if (PUtilsRS.isReadableSream(params.body) || Buffer.isBuffer(params.body)) {
+			} else if (PUtilsRS.isReadableStream(params.body) || Buffer.isBuffer(params.body)) {
 				this.body = params.body
 			} else if (typeof params.body == 'number') {
 				this.headers['Content-Type'] = 'text/plain'
