@@ -70,7 +70,7 @@ export type PWebServerParams = {
 			deleteOldBodies?: (minutesExpiration: number) => Promise<void>
 		}
 	})
-	logger?: PLogger,
+	logger: PLogger,
 }
 
 export class PRoute {
