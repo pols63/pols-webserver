@@ -519,9 +519,10 @@ export class PWebServer {
 		return {
 			info: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
 			warning: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'warning', request),
-			error: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
-			debug: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
-			system: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
+			error: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'error', request),
+			debug: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'debug', request),
+			system: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'system', request),
+			fatal: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'fatal', request),
 		}
 	}
 
