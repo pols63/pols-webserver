@@ -121,7 +121,7 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 	}
 }
 
-const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
+const socketConnectionEvent = async (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
 	webServer.logger.system({ description: `WebSocket: Cliente conectado` })
 	const config = webServer.config
 	const request = new PRequest(clientSocket.request as any)
@@ -137,6 +137,7 @@ const socketConnectionEvent = (webServer: PWebServer, clientSocket: socketIo.Soc
 		storePath: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
 		secretKey: config.sessions.secretKey
 	})
+	await session.start()
 	webServer.config.instances.webSocket.connectionEvent?.(clientSocket, session)
 	if (events) {
 		for (const eventName in events) {
