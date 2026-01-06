@@ -56,6 +56,7 @@ export type PWebServerParams = {
 	public?: {
 		path: string
 		urlPath: string
+		cacheControl?: boolean
 	},
 	sessions: {
 		minutesExpiration: number
@@ -93,7 +94,6 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 	if (response.status) res.status(response.status)
 	if (!response.cacheControl) {
 		res.set('Cache-Control', 'no-store')
-		// res.set('ETag', Math.random().toString())
 	}
 	if (response.headers) {
 		for (const headerName in response.headers) {
@@ -259,7 +259,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			if (PUtilsFS.existsFile(publicFilePath)) {
 				return new PResponse({
 					body: new PFileInfo({ filePath: publicFilePath }),
-					status: 200
+					status: 200,
+					cacheControl: config.public?.cacheControl ?? true
 				})
 			}
 		}

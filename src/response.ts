@@ -53,6 +53,7 @@ export type PResponseParams = {
 	status?: number
 	statusText?: string
 	headers?: { [key: string]: string }
+	cacheControl?: boolean
 } | {
 	redirect: string
 }
@@ -127,6 +128,7 @@ export class PResponse {
 				}
 			}
 
+			this.cacheControl = params.cacheControl ?? false
 			this.status = params.status
 			this.statusText = params.statusText
 		}
