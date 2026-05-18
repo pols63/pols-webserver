@@ -1,11 +1,50 @@
 import express from 'express'
 import { PRecord, PUtilsObject } from 'pols-utils'
 
-export class PRequest {
+export class PUrl {
 	readonly protocol: string
-	readonly hostname: string
-	readonly pathUrl: string
-	readonly queryUrl: string
+	readonly host: string
+	readonly path: string
+	readonly query: string
+
+	constructor(params: {
+		protocol: string
+		host: string
+		path: string
+		query: string
+	}) {
+		this.protocol = params.protocol
+		this.host = params.host
+		this.path = params.path
+		this.query = params.query
+	}
+
+	toString(toShow?: {
+		protocol?: boolean
+		host?: boolean
+		path?: boolean
+		query?: boolean
+	}) {
+		let url = ''
+		if (toShow?.protocol == null || toShow?.protocol == true) url += this.protocol
+		if (toShow?.host == null || toShow?.host == true) {
+			if (url) url += '://'
+			url += this.host
+		}
+		if (toShow?.path == null || toShow?.path == true) {
+			if (url) url += '/'
+			url += this.path
+		}
+		if ((toShow?.query == null || toShow?.query == true) && this.query) {
+			if (url) url += '?'
+			url += this.query
+		}
+		return url
+	}
+}
+
+export class PRequest {
+	readonly url: PUrl
 	readonly query: PRecord
 	readonly ip: string
 	readonly headers: Record<string, string>
@@ -26,12 +65,15 @@ export class PRequest {
 	public remap?: string
 
 	constructor(req: express.Request) {
-		this.protocol = req.protocol
-		this.hostname = req.hostname
-		this.referrer = req.get?.('Referer')
-		this.pathUrl = req.path?.replace(/^\//, '') ?? ''
+		/* Construcción de los elementos de la URL */
 		this.query = (req.query as any) ?? {}
-		this.queryUrl = PUtilsObject.toUrlParameters(this.query)
+		this.url = new PUrl({
+			protocol: req.protocol,
+			host: req.get('host'),
+			path: req.path?.replace(/^\//, '') ?? '',
+			query: PUtilsObject.toUrlParameters(this.query),
+		})
+		this.referrer = req.get?.('Referer')
 		this.ip = req.ip
 		this.headers = {}
 		for (const key in req.headers) {

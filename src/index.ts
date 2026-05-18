@@ -197,7 +197,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 	const session = new PSession({
 		ip: request.ip,
 		hs: request.cookies?.hs,
-		hostname: request.hostname,
+		hostname: request.url.host,
 		userAgent: request.headers['user-agent'] ?? '',
 		minutesExpiration: config.sessions.minutesExpiration,
 		sessions: webServer.sessions,
@@ -210,8 +210,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 
 	/* Detiene la llamada en caso el protocolo sea diferente */
 	const httpsWebServerPort = config.instances.https?.port
-	if (request.protocol == 'http' && httpsWebServerPort) {
-		return new PResponse({ redirect: `https://${request.hostname}:${httpsWebServerPort}/${request.pathUrl}${request.queryUrl}` })
+	if (request.url.protocol == 'http' && httpsWebServerPort) {
+		return new PResponse({ redirect: `https://${request.url.toString({ protocol: false })}` })
 	}
 
 	webServer.logger.system({ description: 'REQUEST recibido' }, request)
@@ -236,7 +236,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		const parameters = []
 
 		/* Se extrae el path, en caso no lo tenga, se utiliza el path por defecto establecido en la configuración */
-		let requestPathUrl = webServer.config.baseUrl ? request.pathUrl.replace(new RegExp('^' + webServer.config.baseUrl + '(\\/|$)'), '') : request.pathUrl
+		let requestPathUrl = webServer.config.baseUrl ? request.url.path.replace(new RegExp('^' + webServer.config.baseUrl + '(\\/|$)'), '') : request.url.path
 		if (config.remap && requestPathUrl) {
 			for (const r of config.remap) {
 				const requestPathUrlResult = requestPathUrl.replace(r.from, r.to)
@@ -252,8 +252,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		/* Se valida si el pathUrl apunta a un archivo en public */
 		if (config.public) {
 			let pathUrlCopy = pathUrl
-			if (config.public.urlPath && request.pathUrl.match(new RegExp('^' + config.public.urlPath))) {
-				pathUrlCopy = request.pathUrl.replace(new RegExp('^' + config.public.urlPath), '')
+			if (config.public.urlPath && request.url.path.match(new RegExp('^' + config.public.urlPath))) {
+				pathUrlCopy = request.url.path.replace(new RegExp('^' + config.public.urlPath), '')
 			}
 			const publicFilePath = path.join(config.public.path, pathUrlCopy)
 			if (PUtilsFS.existsFile(publicFilePath)) {
@@ -490,7 +490,7 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 const logger = (params: PLoggerLogParams, pLogger?: PLogger, methodName?: string, request?: PRequest) => {
 	if (!pLogger) return
 	const tags = [...(params.tags ?? [])]
-	if (request) tags.push(request.ip, request.pathUrl)
+	if (request) tags.push(request.ip, request.url.path)
 	pLogger?.[methodName]?.({
 		...params,
 		tags
@@ -519,12 +519,12 @@ export class PWebServer {
 
 	get logger() {
 		return {
-			info: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'info', request),
-			warning: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'warning', request),
-			error: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'error', request),
-			debug: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'debug', request),
-			system: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'system', request),
-			fatal: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({...params, label: 'WEB SERVER'}, this.config.logger, 'fatal', request),
+			info: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'info', request),
+			warning: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'warning', request),
+			error: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'error', request),
+			debug: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'debug', request),
+			system: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'system', request),
+			fatal: (params: Omit<PLoggerLogParams, 'label'>, request?: PRequest) => logger({ ...params, label: 'WEB SERVER' }, this.config.logger, 'fatal', request),
 		}
 	}
 
@@ -539,7 +539,7 @@ export class PWebServer {
 			sizeRequest: rules({ default: 50 }).isNumber().isGt(0)
 		}).validate<PWebServerParams>(config)
 		if (v.error == true) throw new Error(v.messages[0])
-		config.paths = v.result.paths
+		config.paths = v.sanitized.paths
 
 		/* Valida la existencia de definición de una instancia */
 		if (!config.instances.http && !config.instances.https) {

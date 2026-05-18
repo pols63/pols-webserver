@@ -1,3 +1,4 @@
+import { PLogger } from 'pols-logger'
 import { PWebServer } from '../src/index'
 import { PSessionStoreMethod } from '../src/session'
 import path from 'path'
@@ -18,6 +19,7 @@ const server = new PWebServer({
 		path: path.join(__dirname, './sessions'),
 		pretty: true,
 		secretKey: 'hola'
-	}
+	},
+	logger: new PLogger
 })
 server.start()
