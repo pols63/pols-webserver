@@ -108,7 +108,7 @@ export class PRequest {
 			this.cookies = {}
 			for (const cookiesPart of cookiesParts) {
 				const parts = cookiesPart.split('=')
-				this.cookies[parts.shift().trim()] = decodeURI(parts.join('='))
+				this.cookies[parts.shift().trim()] = decodeURIComponent(parts.join('='))
 			}
 		}
 	}

@@ -9,6 +9,7 @@ const server = new PWebServer({
 			port: 6001
 		}
 	},
+	hotReloading: true,
 	paths: {
 		routes: path.join(__dirname, './routes'),
 		uploads: path.join(__dirname, './uploads')

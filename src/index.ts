@@ -44,6 +44,7 @@ export type PWebServerParams = {
 		minutesExpiration: number
 	}
 	sizeRequest?: number
+	hotReloading?: boolean
 	paths: {
 		routes: string
 		uploads: string
@@ -109,13 +110,12 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 	const body = response.body
 
 	if (typeof body == 'object' && 'on' in body && 'read' in body && 'pipe' in body) {
-		const bytes = []
-		body.on('data', (chunk) => {
-			bytes.push(chunk)
+		body.on('error', (err) => {
+			if (!res.headersSent) {
+				res.status(500).send('Error reading stream')
+			}
 		})
-		body.on('end', () => {
-			res.send(Buffer.concat(bytes))
-		})
+		body.pipe(res)
 	} else {
 		res.send(body ?? '')
 	}
@@ -154,15 +154,20 @@ const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Pro
 
 	if (!fs.existsSync(codePath)) throw new Error(`No existe el archivo de ruta '${codePath}'`)
 
+	if (config.hotReloading) {
+		delete require.cache[codePath]
+	}
+
 	let RouteClass: any
 	try {
 		RouteClass = require(codePath)
 	} catch (err) {
 		throw new Error(`Error al intentar importar la ruta '${codePath}'.\n${err.stack}`)
 	}
-	if (!(RouteClass?.default?.prototype instanceof PRoute)) throw new Error(`La ruta '${codePath}' debe entregar una clase heredada de 'Route'`)
+	const TargetClass = RouteClass?.default || RouteClass
+	if (!(TargetClass?.prototype instanceof PRoute)) throw new Error(`La ruta '${codePath}' debe entregar una clase heredada de 'Route'`)
 
-	return RouteClass.default
+	return TargetClass
 }
 
 const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: PSession) => {
@@ -172,7 +177,7 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 	})
 	let notFoundEventResponse: PResponse
 	try {
-		notFoundEventResponse = await webServer.onNotFound?.({ type: 'script', request, session }) as PResponse
+		notFoundEventResponse = await webServer.onNotFound?.({ type, request, session }) as PResponse
 		if (!notFoundEventResponse) {
 			if (type == 'script') {
 				webServer.logger.error({ description: `No se encontró la ruta '${pathToRoute}'` }, request)
@@ -284,7 +289,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			if (elementExists) {
 				/* Si el elemento existe, se evalúa si se trata de un directorio, si no lo es, se responde con error 404 */
 				const statsInfo = fs.statSync(pathToRoute)
-				if (statsInfo.isDirectory) {
+				if (statsInfo.isDirectory()) {
 					pathToRouteArray.push(part)
 					relativePathToRouteArray.push(part)
 					i++
@@ -323,7 +328,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 
 			try {
 				const routeClass = await loadRouteClass(webServer, pathToRoute)
-				routeObject = new routeClass(this, request, session)
+				routeObject = new routeClass(webServer, request, session)
 			} catch (err) {
 				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
 				webServer.logger.error({ description, body: err }, request)
@@ -348,7 +353,8 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				/* Si no se ha encontrado la función indicada en la URL, se buscará la función $index, de existir, se invocará automáticamente a ésta, dejando a 'part' con el rol de parámetro */
 				functionName = '$index'
 			} else {
-				return await notFound(webServer, 'function', pathToRoute, functionName, request, session)
+				const attemptedName = part ? `${request.method}$${part} o $${part}` : '$index'
+				return await notFound(webServer, 'function', pathToRoute, attemptedName, request, session)
 			}
 		}
 
@@ -366,7 +372,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			status: 404
 		})
 
-		if (typeof toExecute != 'function' || toExecute.constructor.name != 'AsyncFunction') return new PResponse({
+		if (typeof toExecute != 'function') return new PResponse({
 			body: `'${functionName}' no es una función válida de ruta`,
 			status: 500
 		})
@@ -475,7 +481,7 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 			const filePath = path.join(webServer.paths.uploads, file)
 			const stats = fs.statSync(filePath)
 			if (!stats.isFile()) continue
-			if (stats.ctime < expirationTime && stats.size > 0) {
+			if (stats.ctime < expirationTime) {
 				try {
 					fs.unlinkSync(filePath)
 					webServer.logger.info({ description: `Archivo borrado: ${file}` })
@@ -536,10 +542,13 @@ export class PWebServer {
 				routes: rules({ required: true }).isAlphanumeric(),
 				uploads: rules({ default: './' }).isAlphanumeric()
 			}),
-			sizeRequest: rules({ default: 50 }).isNumber().isGt(0)
+			sizeRequest: rules({ default: 50 }).isNumber().isGt(0),
+			hotReloading: rules({ default: false }).isBoolean()
 		}).validate<PWebServerParams>(config)
 		if (v.error == true) throw new Error(v.messages[0])
 		config.paths = v.sanitized.paths
+		config.sizeRequest = v.sanitized.sizeRequest
+		config.hotReloading = v.sanitized.hotReloading
 
 		/* Valida la existencia de definición de una instancia */
 		if (!config.instances.http && !config.instances.https) {
@@ -567,6 +576,12 @@ export class PWebServer {
 			sessions: config.sessions.storeMethod == PSessionStoreMethod.files ? config.sessions.path : undefined,
 			uploads: config.paths.uploads,
 			public: config.public?.path,
+		}
+
+		try {
+			if (!fs.existsSync(config.paths.uploads)) fs.mkdirSync(config.paths.uploads, { recursive: true })
+		} catch (err) {
+			this.logger.error({ description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
 		}
 
 		/* Define el comportamiento de la APP, según la configuración entregada */
@@ -604,18 +619,7 @@ export class PWebServer {
 		app.use(bodyParser.text({ limit: config.sizeRequest + 'mb' }))
 		app.use(bodyParser.urlencoded({ limit: config.sizeRequest + 'mb', extended: true }))
 
-		app.use(async (req: express.Request, res: express.Response, next: () => void) => {
-			try {
-				if (!fs.existsSync(config.paths.uploads)) fs.mkdirSync(config.paths.uploads)
-				next()
-			} catch (err) {
-				this.logger.error({ description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
-				responseToClient(new PResponse({
-					body: 'Ocurrió un error al intentar crear la carpeta de recepción de archivos',
-					status: 500
-				}), res)
-			}
-		})
+
 
 		/* express-fileupload */
 		app.use(expressFileupload({
