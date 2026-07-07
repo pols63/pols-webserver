@@ -1,4 +1,5 @@
 import express from 'express'
+import http from 'http'
 import { PRecord, PUtilsObject } from 'pols-utils'
 
 export class PUrl {
@@ -64,27 +65,46 @@ export class PRequest {
 	}
 	public remap?: string
 
-	constructor(req: express.Request) {
+	constructor(req: express.Request | http.IncomingMessage) {
 		/* Construcción de los elementos de la URL */
-		this.query = (req.query as any) ?? {}
+		let query: Record<string, any> = {}
+		if ('query' in req && req.query) {
+			query = req.query as any
+		} else if (req.url) {
+			const urlParts = req.url.split('?')
+			if (urlParts[1]) {
+				const urlParams = new URLSearchParams(urlParts[1])
+				for (const [key, value] of urlParams.entries()) {
+					query[key] = value
+				}
+			}
+		}
+		this.query = query
+
+		const protocol = ('protocol' in req ? (req as any).protocol : null) || (req.socket && 'encrypted' in req.socket ? 'https' : 'http') || 'http'
+		const host = (typeof (req as any).get === 'function' ? (req as any).get('host') : (req.headers['host'] as string)) || ''
+		const pathVal = ('path' in req ? (req as any).path : null) || (req.url ? req.url.split('?')[0] : '') || ''
+
 		this.url = new PUrl({
-			protocol: req.protocol,
-			host: req.get('host'),
-			path: req.path?.replace(/^\//, '') ?? '',
+			protocol,
+			host,
+			path: pathVal.replace(/^\//, '') ?? '',
 			query: PUtilsObject.toUrlParameters(this.query),
 		})
-		this.referrer = req.get?.('Referer')
-		this.ip = req.ip
+
+		this.referrer = (typeof (req as any).get === 'function' ? (req as any).get('Referer') : (req.headers['referer'] as string)) || ''
+		this.ip = ('ip' in req ? (req as any).ip : null) || req.socket?.remoteAddress || ''
 		this.headers = {}
 		for (const key in req.headers) {
 			const value = req.headers[key]
-			this.headers[key] = value instanceof Array ? value.join(', ') : value
+			this.headers[key] = value instanceof Array ? value.join(', ') : (value || '')
 		}
-		this.body = req.body
-		if (req.files) {
+		this.body = 'body' in req ? (req as any).body : undefined
+		if ('files' in req && (req as any).files) {
+			const files = (req as any).files
 			this.files = {}
-			for (const file in req.files) {
-				let reference = req.files[file]
+			for (const file in files) {
+				let reference = files[file]
 				if (!(reference instanceof Array)) {
 					reference = [reference]
 				}
@@ -100,8 +120,8 @@ export class PRequest {
 				}
 			}
 		}
-		this.method = req.method.toLowerCase()
-		this.targetHost = req.headers['host']
+		this.method = req.method?.toLowerCase() || 'get'
+		this.targetHost = (req.headers['host'] as string) || ''
 		const cookiesHeader = req.headers.cookie
 		if (cookiesHeader) {
 			const cookiesParts = cookiesHeader.split(';')
