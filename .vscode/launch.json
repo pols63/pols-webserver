@@ -15,7 +15,7 @@
 			"runtimeArgs": [
 				"run",
 				"test",
-				"test/validaciones.ts"
+				"${relativeFile}"
 			]
 		}
 	]

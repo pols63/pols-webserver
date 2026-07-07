@@ -12,9 +12,11 @@ import path from 'path'
 import socketIo from 'socket.io'
 import { PLogger, PLoggerLogParams, PLoggerParams } from 'pols-logger'
 import { PUtilsFS } from 'pols-utils'
+import { PDictionary, prepareMessage } from './dictionary'
 
 export { PQuickResponse } from './quickResponse'
 export { PResponse, PRequest }
+export { PLogger, PLoggerLogParams, PLoggerParams } from 'pols-logger'
 
 export type PWebSocketClientEvents = Record<string, (params: { clientSocket: socketIo.Socket, session: PSession, data: unknown[] }) => void>
 
@@ -122,7 +124,7 @@ const responseToClient = (response: PResponse, res: express.Response) => {
 }
 
 const socketConnectionEvent = async (webServer: PWebServer, clientSocket: socketIo.Socket, events: PWebSocketClientEvents) => {
-	webServer.logger.system({ description: `WebSocket: Cliente conectado` })
+	webServer.logger.system({ description: PDictionary.systemWebSocketConnected })
 	const config = webServer.config
 	const request = new PRequest(clientSocket.request as any)
 	const session = new PSession({
@@ -152,7 +154,7 @@ const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Pro
 	const config = webServer.config
 	const codePath = require.resolve(path.resolve(config.paths.routes, ...filePath))
 
-	if (!fs.existsSync(codePath)) throw new Error(`No existe el archivo de ruta '${codePath}'`)
+	if (!fs.existsSync(codePath)) throw new Error(prepareMessage(PDictionary.errorRouteFileNotExists, { codePath }))
 
 	if (config.hotReloading) {
 		delete require.cache[codePath]
@@ -162,17 +164,17 @@ const loadRouteClass = async (webServer: PWebServer, ...filePath: string[]): Pro
 	try {
 		RouteClass = require(codePath)
 	} catch (err) {
-		throw new Error(`Error al intentar importar la ruta '${codePath}'.\n${err.stack}`)
+		throw new Error(prepareMessage(PDictionary.errorRouteImport, { codePath, stack: err.stack }))
 	}
 	const TargetClass = RouteClass?.default || RouteClass
-	if (!(TargetClass?.prototype instanceof PRoute)) throw new Error(`La ruta '${codePath}' debe entregar una clase heredada de 'Route'`)
+	if (!(TargetClass?.prototype instanceof PRoute)) throw new Error(prepareMessage(PDictionary.errorRouteInheritance, { codePath }))
 
 	return TargetClass
 }
 
 const notFound = async (webServer: PWebServer, type: 'script' | 'function', pathToRoute: string, functionName: string, request: PRequest, session: PSession) => {
 	const response = new PResponse({
-		body: `No se encontró la ruta`,
+		body: PDictionary.errorRouteNotFound,
 		status: 404
 	})
 	let notFoundEventResponse: PResponse
@@ -180,13 +182,13 @@ const notFound = async (webServer: PWebServer, type: 'script' | 'function', path
 		notFoundEventResponse = await webServer.onNotFound?.({ type, request, session }) as PResponse
 		if (!notFoundEventResponse) {
 			if (type == 'script') {
-				webServer.logger.error({ description: `No se encontró la ruta '${pathToRoute}'` }, request)
+				webServer.logger.error({ description: prepareMessage(PDictionary.errorRouteNotFoundLogger, { pathToRoute }) }, request)
 			} else {
-				webServer.logger.error({ description: `No se encontró la función '${functionName}' en '${pathToRoute}'` }, request)
+				webServer.logger.error({ description: prepareMessage(PDictionary.errorFunctionNotFoundLogger, { functionName, pathToRoute }) }, request)
 			}
 		}
 	} catch (err) {
-		const subtitle = `Error al ejecutar el evento 'notFound'`
+		const subtitle = PDictionary.errorNotFoundEvent
 		webServer.logger.error({ description: subtitle, body: err }, request)
 		notFoundEventResponse = new PResponse({
 			body: subtitle,
@@ -219,7 +221,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		return new PResponse({ redirect: `https://${request.url.toString({ protocol: false })}` })
 	}
 
-	webServer.logger.system({ description: 'REQUEST recibido' }, request)
+	webServer.logger.system({ description: PDictionary.systemRequestReceived }, request)
 
 	/* Ejecuta el evento, el cual puede responder con un objeto Response y con ello detener el proceso */
 	if (webServer.onRequestReceived) {
@@ -227,7 +229,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		try {
 			response = await webServer.onRequestReceived({ request, session })
 		} catch (err) {
-			const message = `Ocurrió un error al ejecutar en el manejador del evento 'onRequestReceived'`
+			const message = PDictionary.errorRequestReceived
 			webServer.logger.error({ description: message, body: err }, request)
 			return new PResponse({
 				body: message,
@@ -330,10 +332,10 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 				const routeClass = await loadRouteClass(webServer, pathToRoute)
 				routeObject = new routeClass(webServer, request, session)
 			} catch (err) {
-				const description = `Error al importar la ruta '${relativePathToRouteArray.join(' / ')}'`
+				const description = prepareMessage(PDictionary.errorRouteImportFromRelative, { relativePath: relativePathToRouteArray.join(' / ') })
 				webServer.logger.error({ description, body: err }, request)
 				return new PResponse({
-					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
+					body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : PDictionary.errorServer,
 					status: 500
 				})
 			}
@@ -368,24 +370,24 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		const toExecute = routeObject[functionName]
 
 		if (toExecute == null) return new PResponse({
-			body: `'${functionName}' no existe como método de ruta`,
+			body: prepareMessage(PDictionary.errorMethodNotExists, { functionName }),
 			status: 404
 		})
 
 		if (typeof toExecute != 'function') return new PResponse({
-			body: `'${functionName}' no es una función válida de ruta`,
+			body: prepareMessage(PDictionary.errorMethodInvalid, { functionName }),
 			status: 500
 		})
 
 		/* Verifica si la librería tiene definida una lista blanca de IPs */
 		if (routeObject.whiteList.length && !routeObject.whiteList.includes(request.ip)) return new PResponse({
-			body: `Acceso prohibido al IP '${request.ip}'`,
+			body: prepareMessage(PDictionary.errorForbiddenIp, { ip: request.ip }),
 			status: 401
 		})
 
 		/* Verifica si la librería tiene definida una lista blanca de IPs */
 		if (routeObject.blackList.length && routeObject.blackList.includes(request.ip)) return new PResponse({
-			body: `Acceso prohibido al IP '${request.ip}'`,
+			body: prepareMessage(PDictionary.errorForbiddenIp, { ip: request.ip }),
 			status: 401
 		})
 
@@ -394,7 +396,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			const response = await webServer.onBeforeExecute?.({ route: routeObject, request, session })
 			if (response) return response
 		} catch (err) {
-			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'beforeExecute'`
+			const subtitle = PDictionary.errorBeforeExecute
 			webServer.logger.error({ description: subtitle, body: err }, request)
 			return new PResponse({
 				body: subtitle,
@@ -406,10 +408,10 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		try {
 			result = await toExecute.apply(routeObject, parameters)
 		} catch (err) {
-			const description = `Ocurrió un error en la ejecución de la función '${functionName}'`
+			const description = prepareMessage(PDictionary.errorFunctionExecution, { functionName })
 			webServer.logger.error({ description, body: err }, request)
 			result = new PResponse({
-				body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : 'Error en el servidor',
+				body: config.showErrorsOnClient ? `${description}${err ? `\n\n${err.message}\n${err.stack}` : ''}` : PDictionary.errorServer,
 				status: 500
 			})
 		} finally {
@@ -417,7 +419,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			try {
 				await routeObject.onFinally?.()
 			} catch (err) {
-				const subtitle = `Ocurrió un error en la ejecución del método 'finally'`
+				const subtitle = PDictionary.errorFinally
 				webServer.logger.error({ description: subtitle, body: err }, request)
 				result = new PResponse({
 					body: subtitle,
@@ -431,7 +433,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 			const result2 = await webServer.onBeforeResponse?.({ route: routeObject, request, session, callbackResult: result })
 			if (result2) result = result2
 		} catch (err) {
-			const subtitle = `Ocurrió un error en la ejecución del manejador del evento 'onBeforeResponse'`
+			const subtitle = PDictionary.errorBeforeResponse
 			webServer.logger.error({ description: subtitle, body: err }, request)
 			result = new PResponse({
 				body: subtitle,
@@ -450,7 +452,7 @@ const detectRoute = async (webServer: PWebServer, req: express.Request): Promise
 		}
 	})()
 
-	webServer.logger.system({ description: 'RESPONSE enviado' }, request)
+	webServer.logger.system({ description: PDictionary.systemResponseSent }, request)
 	response.cookies.push({
 		name: 'hs',
 		value: session.encriptedId,
@@ -484,9 +486,9 @@ const deleteOldFiles = async (webServer: PWebServer) => {
 			if (stats.ctime < expirationTime) {
 				try {
 					fs.unlinkSync(filePath)
-					webServer.logger.info({ description: `Archivo borrado: ${file}` })
+					webServer.logger.info({ description: prepareMessage(PDictionary.infoFileDeleted, { file }) })
 				} catch (err) {
-					webServer.logger.error({ description: `Error al intentar borrar el archivo "${file}"`, body: err })
+					webServer.logger.error({ description: prepareMessage(PDictionary.errorDeleteFile, { file }), body: err })
 				}
 			}
 		}
@@ -552,22 +554,22 @@ export class PWebServer {
 
 		/* Valida la existencia de definición de una instancia */
 		if (!config.instances.http && !config.instances.https) {
-			throw new Error(`Es requerido especificar la configuración de las instancias de servicio web en 'instances.http' o 'instances.https'`)
+			throw new Error(PDictionary.errorInstancesRequired)
 		}
 
 		/* Valida el contenido de la ruta por defecto */
-		if (config.defaultRoute && config.defaultRoute.match(/^(\/|\\)/)) throw new Error(`La propiedad de configuración 'defaultRoute' no debe iniciar con '\\' o '/'`)
+		if (config.defaultRoute && config.defaultRoute.match(/^(\/|\\)/)) throw new Error(PDictionary.errorDefaultRouteSlashes)
 
 		/* Valida la configuración de las sesiones */
 		if (config.sessions.storeMethod == PSessionStoreMethod.files) {
-			if (!config.sessions.path) throw new Error(`Se debe indicar una ruta válida para almacenar las sesiones en 'sessions.path' cuando 'sessions.store' es igual a 'files'`)
+			if (!config.sessions.path) throw new Error(PDictionary.errorSessionPathRequired)
 		}
-		if (config.sessions.minutesExpiration < 0) throw new Error(`La propiedad 'sessions.minutesExpiration' debe ser mayor o igual a cero`)
+		if (config.sessions.minutesExpiration < 0) throw new Error(PDictionary.errorSessionExpirationNegative)
 
 		/* Valida las propiedades para public */
 		if (config.public) {
-			if (!config.public.path.trim()) throw new Error(`Se debe indicar una ruta válida en 'public.filePath'`)
-			if (config.public.urlPath.match(/^\//)) throw new Error(`La propiedad 'public.urlPath' no puede iniciar con '/'`)
+			if (!config.public.path.trim()) throw new Error(PDictionary.errorPublicPathRequired)
+			if (config.public.urlPath.match(/^\//)) throw new Error(PDictionary.errorPublicUrlPathSlash)
 		}
 
 		this.config = config
@@ -581,7 +583,7 @@ export class PWebServer {
 		try {
 			if (!fs.existsSync(config.paths.uploads)) fs.mkdirSync(config.paths.uploads, { recursive: true })
 		} catch (err) {
-			this.logger.error({ description: `Ocurrió un error al intentar crear la carpeta de recepción de archivos '${config.paths.uploads}'`, body: err })
+			this.logger.error({ description: prepareMessage(PDictionary.errorUploadFolderCreation, { uploadPath: config.paths.uploads }), body: err })
 		}
 
 		/* Define el comportamiento de la APP, según la configuración entregada */
@@ -597,7 +599,7 @@ export class PWebServer {
 			} else {
 				responseToClient(new PResponse({
 					status: 404,
-					body: 'No se encontró la ruta'
+					body: PDictionary.errorRouteNotFound
 				}), res)
 			}
 		})
@@ -608,7 +610,7 @@ export class PWebServer {
 				if (error instanceof SyntaxError) {
 					responseToClient(new PResponse({
 						status: 400,
-						body: 'Formato JSON incorrecto'
+						body: PDictionary.errorJsonFormat
 					}), res)
 				} else {
 					next(error)
@@ -636,7 +638,7 @@ export class PWebServer {
 
 			if (contentLength > config.sizeRequest * 1024 * 1024) {
 				responseToClient(new PResponse({
-					body: 'La petición supera el límite establecido',
+					body: PDictionary.errorRequestLimit,
 					status: 500
 				}), res)
 			} else {
@@ -650,9 +652,9 @@ export class PWebServer {
 			try {
 				response = await detectRoute(this, req)
 			} catch (error) {
-				this.logger.error({ description: `Ocurrió un error en la ejecución del evento 'beforeExecute'`, body: error })
+				this.logger.error({ description: PDictionary.errorBeforeExecute, body: error })
 				response = new PResponse({
-					body: 'Error en el servidor',
+					body: PDictionary.errorServer,
 					status: 500
 				})
 			}
@@ -682,18 +684,18 @@ export class PWebServer {
 	}
 
 	start() {
-		if (this.server?.listening || this.serverTls?.listening) throw new Error(`El servicio ya ha sido inicializado`)
+		if (this.server?.listening || this.serverTls?.listening) throw new Error(PDictionary.errorServiceInitialized)
 		const config = this.config
 
 		if (config.instances.http) {
 			this.server.listen(config.instances.http.port, () => {
-				this.logger.system({ description: `Escuchando en el puerto ${config.instances.http.port} con protocolo HTTP` })
+				this.logger.system({ description: prepareMessage(PDictionary.systemListeningHttp, { port: config.instances.http.port }) })
 			})
 		}
 
 		if (config.instances.https) {
 			this.serverTls.listen(config.instances.https.port, () => {
-				this.logger.system({ description: `Escuchando en el puerto ${config.instances.https.port} con protocolo HTTPS` })
+				this.logger.system({ description: prepareMessage(PDictionary.systemListeningHttps, { port: config.instances.https.port }) })
 			})
 		}
 
@@ -704,10 +706,10 @@ export class PWebServer {
 	stop() {
 		clearInterval(this.oldFilesDeleterInterval)
 		this.server?.close(() => {
-			this.logger.system({ description: `Servicio HTTP detenido` })
+			this.logger.system({ description: PDictionary.systemHttpStopped })
 		})
 		this.serverTls?.close(() => {
-			this.logger.system({ description: `Servicio HTTPS detenido` })
+			this.logger.system({ description: PDictionary.systemHttpsStopped })
 		})
 	}
 }
