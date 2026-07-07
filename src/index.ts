@@ -540,7 +540,6 @@ export class PWebServer {
 		/* Valida los parámetros de la configuración */
 		const v = rules('config', true).isObject({
 			paths: rules(true).isObject({
-				logs: rules(false, './').isString(),
 				routes: rules(true).isString(),
 				uploads: rules(false, './').isString()
 			}),
