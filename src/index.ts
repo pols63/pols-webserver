@@ -538,14 +538,14 @@ export class PWebServer {
 
 	constructor(config: PWebServerParams) {
 		/* Valida los parámetros de la configuración */
-		const v = rules({ label: 'config', required: true }).isObject({
-			paths: rules({ required: true }).isObject({
-				logs: rules({ default: './' }).isAlphanumeric(),
-				routes: rules({ required: true }).isAlphanumeric(),
-				uploads: rules({ default: './' }).isAlphanumeric()
+		const v = rules('config', true).isObject({
+			paths: rules(true).isObject({
+				logs: rules(false, './').isString(),
+				routes: rules(true).isString(),
+				uploads: rules(false, './').isString()
 			}),
-			sizeRequest: rules({ default: 50 }).isNumber().isGt(0),
-			hotReloading: rules({ default: false }).isBoolean()
+			sizeRequest: rules(false, 50).isNumber().isGt(0),
+			hotReloading: rules(false, false).isBoolean()
 		}).validate<PWebServerParams>(config)
 		if (v.error == true) throw new Error(v.messages[0])
 		config.paths = v.sanitized.paths
