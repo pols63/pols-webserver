@@ -515,7 +515,7 @@ export class PWebServer {
 		readonly uploads?: string
 		readonly public?: string
 	}
-	private app?: express.Express
+	public expressInstance?: express.Express
 	private server?: http.Server
 	public webSocket?: socketIo.Server
 	private serverTls?: https.Server
@@ -587,8 +587,8 @@ export class PWebServer {
 		}
 
 		/* Define el comportamiento de la APP, según la configuración entregada */
-		this.app = express()
-		const app = this.app
+		this.expressInstance = express()
+		const app = this.expressInstance
 
 		app.disable('x-powered-by')
 
@@ -620,8 +620,6 @@ export class PWebServer {
 		app.use(bodyParser.raw({ limit: config.sizeRequest + 'mb' }))
 		app.use(bodyParser.text({ limit: config.sizeRequest + 'mb' }))
 		app.use(bodyParser.urlencoded({ limit: config.sizeRequest + 'mb', extended: true }))
-
-
 
 		/* express-fileupload */
 		app.use(expressFileupload({
@@ -662,13 +660,13 @@ export class PWebServer {
 		})
 
 		if (config.instances.http) {
-			this.server = http.createServer(this.app)
+			this.server = http.createServer(this.expressInstance)
 		}
 		if (config.instances.https) {
 			this.serverTls = https.createServer({
 				cert: config.instances.https.cert,
 				key: config.instances.https.key,
-			}, this.app)
+			}, this.expressInstance)
 		}
 
 		if (config.instances.webSocket) {
