@@ -5,6 +5,7 @@ import { PRecord, PUtilsObject } from 'pols-utils'
 export class PUrl {
 	readonly protocol: string
 	readonly host: string
+	readonly port: number | null
 	readonly path: string
 	readonly query: string
 
@@ -15,7 +16,10 @@ export class PUrl {
 		query: string
 	}) {
 		this.protocol = params.protocol
-		this.host = params.host
+		/* Separar host y puerto si vienen juntos (ej. "localhost:3000") */
+		const hostParts = params.host.split(':')
+		this.host = hostParts[0]
+		this.port = hostParts[1] ? parseInt(hostParts[1], 10) : null
 		this.path = params.path
 		this.query = params.query
 	}
@@ -23,6 +27,7 @@ export class PUrl {
 	toString(toShow?: {
 		protocol?: boolean
 		host?: boolean
+		port?: boolean
 		path?: boolean
 		query?: boolean
 	}) {
@@ -31,6 +36,9 @@ export class PUrl {
 		if (toShow?.host == null || toShow?.host == true) {
 			if (url) url += '://'
 			url += this.host
+		}
+		if ((toShow?.port == null || toShow?.port == true) && this.port != null) {
+			url += `:${this.port}`
 		}
 		if (toShow?.path == null || toShow?.path == true) {
 			if (url) url += '/'
