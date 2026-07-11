@@ -11,6 +11,9 @@
 	},
 	"author": "Jean Paul Sánchez mendoza",
 	"license": "ISC",
+	"publishConfig": {
+		"registry": "https://registry.npmjs.org"
+	},
 	"description": "",
 	"exports": {
 		".": {
